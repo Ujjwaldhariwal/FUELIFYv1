@@ -283,6 +283,28 @@ export const MapView = ({
   }, [center]);
 
   useEffect(() => {
+    if (!selectedStationId) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const selectedStation = stations.find((station) => station._id === selectedStationId);
+    if (!selectedStation) return;
+
+    const [lng, lat] = selectedStation.coordinates.coordinates;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    suppressNextMoveRef.current = true;
+    map.flyTo({
+      center: [lng, lat],
+      zoom: clamp(Math.max(map.getZoom(), 12.75), 8, 15),
+      speed: 1.08,
+      curve: 1.42,
+      easing: (t) => t * (2 - t),
+      essential: true,
+    });
+  }, [selectedStationId, stations]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 

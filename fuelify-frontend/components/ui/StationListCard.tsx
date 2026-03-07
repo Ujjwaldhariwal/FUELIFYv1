@@ -23,7 +23,14 @@ const FUEL_LABEL: Record<FuelType, string> = {
 
 const ALL_FUELS: FuelType[] = ['regular', 'midgrade', 'premium', 'diesel', 'e85'];
 
-/** Returns a human-friendly "Updated X ago" string */
+const formatAddress = (station: Station): string => {
+  const parts = [station.address?.street, station.address?.city, station.address?.state]
+    .map((value) => (value ? value.trim() : ''))
+    .filter(Boolean);
+  if (parts.length === 0) return 'Address unavailable';
+  return parts.join(', ');
+};
+
 const getTimeSince = (date?: string | Date): string | null => {
   if (!date) return null;
   const diff = Date.now() - new Date(date).getTime();
@@ -37,7 +44,6 @@ const getTimeSince = (date?: string | Date): string | null => {
   return null;
 };
 
-/** Color class based on freshness */
 const getFreshnessColor = (date?: string | Date): string => {
   if (!date) return 'text-[var(--text-muted)]';
   const hrs = (Date.now() - new Date(date).getTime()) / 3600000;
@@ -53,18 +59,17 @@ export const StationListCard = memo(
     const lastUpdated = station.prices?.lastUpdated ?? undefined;
     const timeSince = getTimeSince(lastUpdated);
     const freshnessColor = getFreshnessColor(lastUpdated);
+    const addressText = formatAddress(station);
 
-    // Secondary fuel prices (all fuels except currently selected)
-    const secondaryFuels = ALL_FUELS.filter((f) => f !== selectedFuel)
-      .map((f) => {
-        const p = station.prices?.[f];
-        return {
-          key: f,
-          label: FUEL_LABEL[f],
-          price: p !== null && p !== undefined ? `$${p.toFixed(2)}` : '—',
-          hasPrice: p !== null && p !== undefined,
-        };
-      });
+    const secondaryFuels = ALL_FUELS.filter((f) => f !== selectedFuel).map((f) => {
+      const p = station.prices?.[f];
+      return {
+        key: f,
+        label: FUEL_LABEL[f],
+        price: p !== null && p !== undefined ? `$${p.toFixed(2)}` : '-',
+        hasPrice: p !== null && p !== undefined,
+      };
+    });
 
     const hasAnySecondary = secondaryFuels.some((f) => f.hasPrice);
 
@@ -84,29 +89,21 @@ export const StationListCard = memo(
               ].join(' '),
         ].join(' ')}
       >
-        {/* ── Top row: logo + info + price ── */}
         <div className="flex items-center gap-3 w-full">
-          {/* Logo */}
           <div className="shrink-0">
             <BrandLogo brand={station.brand} size={40} />
           </div>
 
-          {/* Station info */}
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold text-[var(--text-primary)] group-hover:text-[var(--accent-primary)] transition-colors leading-snug">
               {station.name}
             </p>
             <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
               <MapPin className="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
-              <span className="truncate">
-                {station.address?.street ? `${station.address.street}, ` : ''}
-                {station.address?.city}
-                {station.address?.state ? `, ${station.address.state}` : ''}
-              </span>
+              <span className="truncate">{addressText}</span>
             </div>
           </div>
 
-          {/* Price + distance */}
           <div className="shrink-0 flex items-center gap-2">
             <div className="text-right">
               {hasPrice ? (
@@ -126,9 +123,7 @@ export const StationListCard = memo(
           </div>
         </div>
 
-        {/* ── Bottom row: meta + secondary prices ── */}
         <div className="mt-2 flex items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
-          {/* Left: distance + freshness */}
           <div className="flex items-center gap-2.5 text-[11px]">
             {distance !== undefined && (
               <span className="font-semibold text-[var(--text-secondary)] tabular-nums">
@@ -143,15 +138,12 @@ export const StationListCard = memo(
             )}
           </div>
 
-          {/* Right: secondary fuel prices */}
           {hasAnySecondary && (
             <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
               {secondaryFuels.map((f) => (
                 <span key={f.key} className="tabular-nums">
                   <span className="font-medium">{f.label}</span>{' '}
-                  <span className={f.hasPrice ? 'text-[var(--text-secondary)]' : ''}>
-                    {f.price}
-                  </span>
+                  <span className={f.hasPrice ? 'text-[var(--text-secondary)]' : ''}>{f.price}</span>
                 </span>
               ))}
             </div>

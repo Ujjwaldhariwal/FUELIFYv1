@@ -17,6 +17,7 @@ import {
   getStationClaimSummary,
   initiateClaim,
   resendOtp,
+  submitClaimVerification,
   verifyClaim,
 } from '@/services/api';
 import type { Station, StationClaimSummary } from '@/types';
@@ -54,6 +55,8 @@ export default function ClaimFlowPage() {
     email: string;
     password: string;
     confirmPassword: string;
+    businessRegistrationId: string;
+    website?: string;
   }>();
 
   useEffect(() => {
@@ -106,7 +109,13 @@ export default function ClaimFlowPage() {
     }
   };
 
-  const finalizeAccount = async (data: { name: string; email: string; password: string }) => {
+  const finalizeAccount = async (data: {
+    name: string;
+    email: string;
+    password: string;
+    businessRegistrationId: string;
+    website?: string;
+  }) => {
     if (!otp) {
       setOtpError('OTP not entered');
       return;
@@ -117,6 +126,26 @@ export default function ClaimFlowPage() {
       const res = await verifyClaim({ stationId, phone, otp, ...data });
       localStorage.setItem('fuelify_token', res.token);
       localStorage.setItem('fuelify_owner', JSON.stringify(res.owner));
+      try {
+        const claimRes = await submitClaimVerification(stationId, {
+          businessName: station?.name || data.name,
+          businessRegistrationId: data.businessRegistrationId,
+          claimantName: data.name,
+          claimantEmail: data.email,
+          claimantPhone: phone,
+          website: data.website || undefined,
+        });
+        show(
+          `Verification review started (${claimRes.status})`,
+          claimRes.status === 'REJECTED' || claimRes.status === 'BLOCKED' ? 'warning' : 'info'
+        );
+        router.push(
+          `/dashboard/claim/status/${stationId}${claimRes.claimId ? `?claimId=${claimRes.claimId}` : ''}`
+        );
+        return;
+      } catch (claimError) {
+        show(`Account created. Claim review was not started: ${formatApiErrorForToast(claimError)}`, 'warning');
+      }
       setStep(5);
     } catch (error) {
       show(formatApiErrorForToast(error), 'error');
@@ -204,6 +233,16 @@ export default function ClaimFlowPage() {
                   No, search again
                 </Button>
               </div>
+              {claimSummary?.claim && (
+                <Button
+                  fullWidth
+                  variant="ghost"
+                  className="mt-3"
+                  onClick={() => router.push(`/dashboard/claim/status/${stationId}`)}
+                >
+                  Track verification status
+                </Button>
+              )}
             </div>
           )}
 
@@ -305,6 +344,25 @@ export default function ClaimFlowPage() {
                     validate: (value) => value === watch('password') || 'Passwords do not match',
                   })}
                 />
+                <Input
+                  label="Business Registration ID"
+                  placeholder="OH-123456"
+                  error={errors.businessRegistrationId?.message}
+                  {...register('businessRegistrationId', {
+                    required: 'Business registration ID is required',
+                  })}
+                />
+                <Input
+                  label="Website (Optional)"
+                  placeholder="https://yourstation.com"
+                  error={errors.website?.message}
+                  {...register('website', {
+                    pattern: {
+                      value: /^$|^https?:\/\/.+/i,
+                      message: 'Use a valid URL starting with http:// or https://',
+                    },
+                  })}
+                />
               </div>
 
               <Button type="submit" fullWidth loading={submitting} className="mt-5">
@@ -316,9 +374,9 @@ export default function ClaimFlowPage() {
           {step === 5 && (
             <div className="py-4 text-center">
               <CheckCircle className="mx-auto mb-4 h-16 w-16 text-[var(--color-success)]" />
-              <h1 className="mb-2 text-xl font-bold text-[var(--color-success)]">You're verified!</h1>
+              <h1 className="mb-2 text-xl font-bold text-[var(--color-success)]">Account created</h1>
               <p className="mb-6 text-sm text-[var(--text-secondary)]">
-                {station.name} is now live on Fuelify with an Owner Verified badge.
+                {station.name} claim is under verification review. You can track status from your dashboard.
               </p>
               <Button fullWidth onClick={() => router.push('/dashboard')}>
                 Go to Dashboard &rarr;

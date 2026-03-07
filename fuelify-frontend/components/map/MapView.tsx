@@ -1,12 +1,16 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { FuelType, Station } from '@/types';
-import { getBrandLogoUrl, FALLBACK_URL } from '@/components/ui/BrandLogo';
+import type { FuelType, Station, StationCluster } from '@/types';
+import {
+  createClusterMarkerElement,
+  createMarkerElement,
+  getStationPrice,
+  readMarkerColors,
+} from './MarkerFactory';
 
-/* ── Tile styles ─────────────────────────────────────────── */
 const TILE_STYLES: Record<string, maplibregl.StyleSpecification> = {
   light: {
     version: 8,
@@ -19,10 +23,11 @@ const TILE_STYLES: Record<string, maplibregl.StyleSpecification> = {
           'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
         ],
         tileSize: 256,
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+        attribution:
+          '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
       },
     },
-    layers: [{ id: 'carto-tiles', type: 'raster', source: 'carto', minzoom: 0, maxzoom: 19 }],
+    layers: [{ id: 'carto', type: 'raster', source: 'carto', minzoom: 0, maxzoom: 19 }],
   },
   dark: {
     version: 8,
@@ -35,110 +40,157 @@ const TILE_STYLES: Record<string, maplibregl.StyleSpecification> = {
           'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
         ],
         tileSize: 256,
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+        attribution:
+          '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
       },
     },
-    layers: [{ id: 'carto-tiles', type: 'raster', source: 'carto', minzoom: 0, maxzoom: 19 }],
+    layers: [{ id: 'carto', type: 'raster', source: 'carto', minzoom: 0, maxzoom: 19 }],
   },
 };
 
-/* ── Props ────────────────────────────────────────────────── */
+export interface MapViewportInfo {
+  center: [number, number];
+  zoom: number;
+  bounds: { west: number; south: number; east: number; north: number };
+}
+
 interface MapViewProps {
   stations: Station[];
+  clusters?: StationCluster[];
+  useServerClusters?: boolean;
   selectedFuel: FuelType;
-  center: [number, number]; // [lat, lng]
+  center: [number, number];
   onStationSelect: (station: Station) => void;
   selectedStationId?: string;
   theme?: 'light' | 'dark';
+  initialZoom?: number;
+  onViewportChange?: (viewport: MapViewportInfo) => void;
+  onMapInteraction?: () => void;
 }
 
-/* ── Helpers ──────────────────────────────────────────────── */
-const getPrice = (station: Station, fuel: FuelType): string => {
-  const p = station.prices?.[fuel];
-  return p !== null && p !== undefined ? `$${p.toFixed(2)}` : '—';
+type DisplayPoint =
+  | { kind: 'station'; station: Station; lat: number; lng: number }
+  | { kind: 'cluster'; lat: number; lng: number; count: number; minPrice: number | null };
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const getClusterStepDegrees = (zoom: number) => {
+  if (zoom >= 11) return 0;
+  if (zoom >= 10) return 0.08;
+  if (zoom >= 9) return 0.16;
+  if (zoom >= 8) return 0.35;
+  return 0.7;
 };
 
-const createMarkerElement = (
-  station: Station,
-  fuel: FuelType,
-  isSelected: boolean,
-  colors: { bg: string; border: string; text: string; selectedBg: string; selectedBorder: string }
-): HTMLDivElement => {
-  const el = document.createElement('div');
-  el.className = `fuelify-marker${isSelected ? ' fuelify-marker--selected' : ''}`;
+const buildDisplayPoints = (stations: Station[], selectedFuel: FuelType, zoom: number): DisplayPoint[] => {
+  const step = getClusterStepDegrees(zoom);
+  if (step === 0) {
+    return stations
+      .map((station) => {
+        const [lng, lat] = station.coordinates.coordinates;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return { kind: 'station', station, lat, lng } as DisplayPoint;
+      })
+      .filter((item): item is DisplayPoint => item !== null);
+  }
 
-  const logoUrl = getBrandLogoUrl(station.brand);
-  const price = getPrice(station, fuel);
-  const bg = isSelected ? colors.selectedBg : colors.bg;
-  const border = isSelected ? colors.selectedBorder : colors.border;
-  const textColor = isSelected ? '#FFFFFF' : colors.text;
-  const priceColor = price === '—' ? 'rgba(150,150,150,0.5)' : textColor;
+  const buckets = new Map<
+    string,
+    {
+      count: number;
+      latSum: number;
+      lngSum: number;
+      minPrice: number | null;
+      station: Station | null;
+    }
+  >();
 
-  el.innerHTML = `
-    <div class="fuelify-marker__body" style="
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 8px 4px 4px;
-      background: ${bg};
-      border: 2px solid ${border};
-      border-radius: 12px;
-      white-space: nowrap;
-    ">
-      <img
-        src="${logoUrl}"
-        alt="${station.brand}"
-        width="24"
-        height="24"
-        style="
-          width: 24px;
-          height: 24px;
-          object-fit: contain;
-          border-radius: 6px;
-          background: #fff;
-          padding: 2px;
-          display: block;
-          flex-shrink: 0;
-        "
-        onerror="this.src='${FALLBACK_URL}'"
-      />
-      <span style="
-        font-size: 13px;
-        font-weight: 700;
-        color: ${priceColor};
-        letter-spacing: -0.01em;
-        line-height: 1;
-      ">${price}</span>
-    </div>
-    <div class="fuelify-marker__arrow" style="
-      width: 8px;
-      height: 8px;
-      background: ${bg};
-      border-left: 2px solid ${border};
-      border-bottom: 2px solid ${border};
-      transform: rotate(-45deg);
-      margin: -5px auto 0;
-    "></div>
-  `;
+  for (const station of stations) {
+    const [lng, lat] = station.coordinates.coordinates;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-  return el;
+    const latBucket = Math.floor(lat / step);
+    const lngBucket = Math.floor(lng / step);
+    const key = `${latBucket}:${lngBucket}`;
+    const price = getStationPrice(station, selectedFuel);
+
+    const existing = buckets.get(key);
+    if (!existing) {
+      buckets.set(key, {
+        count: 1,
+        latSum: lat,
+        lngSum: lng,
+        minPrice: price,
+        station,
+      });
+      continue;
+    }
+
+    existing.count += 1;
+    existing.latSum += lat;
+    existing.lngSum += lng;
+    existing.minPrice = existing.minPrice === null ? price : price === null ? existing.minPrice : Math.min(existing.minPrice, price);
+    existing.station = existing.station || station;
+  }
+
+  const points: DisplayPoint[] = [];
+  for (const bucket of buckets.values()) {
+    const lat = bucket.latSum / bucket.count;
+    const lng = bucket.lngSum / bucket.count;
+
+    if (bucket.count === 1 && bucket.station) {
+      points.push({ kind: 'station', station: bucket.station, lat, lng });
+      continue;
+    }
+
+    points.push({
+      kind: 'cluster',
+      lat,
+      lng,
+      count: bucket.count,
+      minPrice: bucket.minPrice,
+    });
+  }
+
+  return points;
 };
 
-/* ── Component ────────────────────────────────────────────── */
 export const MapView = ({
   stations,
+  clusters = [],
+  useServerClusters = false,
   selectedFuel,
   center,
   onStationSelect,
   selectedStationId,
   theme,
+  initialZoom = 11.5,
+  onViewportChange,
+  onMapInteraction,
 }: MapViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const initRef = useRef(false);
+  const suppressNextMoveRef = useRef(false);
+  const [zoomLevel, setZoomLevel] = useState(initialZoom);
 
-  /* ── Init map ───────────────────────────────────────────── */
+  const displayPoints = useMemo(
+    () => {
+      if (useServerClusters && clusters.length > 0) {
+        return clusters.map((cluster) => ({
+          kind: 'cluster' as const,
+          lat: cluster.center.lat,
+          lng: cluster.center.lng,
+          count: cluster.count,
+          minPrice: cluster.minPrice,
+        }));
+      }
+      return buildDisplayPoints(stations, selectedFuel, zoomLevel);
+    },
+    [clusters, selectedFuel, stations, useServerClusters, zoomLevel]
+  );
+
   useEffect(() => {
     if (!containerRef.current || initRef.current) return;
     initRef.current = true;
@@ -146,16 +198,52 @@ export const MapView = ({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: TILE_STYLES[theme || 'dark'],
-      center: [center[1], center[0]], // MapLibre is [lng, lat]
-      zoom: 12,
+      center: [center[1], center[0]],
+      zoom: initialZoom,
       attributionControl: false,
+      fadeDuration: 0,
     });
 
-    // Add minimal attribution (bottom-right, compact)
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-
-    // Custom navigation control (zoom only, no compass)
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    map.scrollZoom.setWheelZoomRate(1 / 220);
+
+    const emitViewport = () => {
+      if (!onViewportChange) return;
+      const b = map.getBounds();
+      onViewportChange({
+        center: [map.getCenter().lat, map.getCenter().lng],
+        zoom: map.getZoom(),
+        bounds: {
+          west: b.getWest(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          north: b.getNorth(),
+        },
+      });
+    };
+
+    map.on('load', () => {
+      setZoomLevel(map.getZoom());
+      emitViewport();
+    });
+
+    map.on('moveend', () => {
+      setZoomLevel(map.getZoom());
+      if (suppressNextMoveRef.current) {
+        suppressNextMoveRef.current = false;
+        return;
+      }
+      emitViewport();
+    });
+
+    map.on('zoomend', () => {
+      setZoomLevel(map.getZoom());
+      emitViewport();
+    });
+
+    map.on('dragstart', () => onMapInteraction?.());
+    map.on('zoomstart', () => onMapInteraction?.());
 
     mapRef.current = map;
 
@@ -166,90 +254,113 @@ export const MapView = ({
       mapRef.current = null;
       initRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [center, initialZoom, onMapInteraction, onViewportChange, theme]);
 
-  /* ── Theme switch ───────────────────────────────────────── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    const style = TILE_STYLES[theme || 'dark'];
-
-    // setStyle removes everything, so we re-render markers after it loads
-    map.setStyle(style);
+    map.setStyle(TILE_STYLES[theme || 'dark']);
   }, [theme]);
 
-  /* ── Fly to center ──────────────────────────────────────── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    const nextCenter = [center[1], center[0]] as [number, number];
+    const curr = map.getCenter();
+    const drift = Math.abs(curr.lat - center[0]) + Math.abs(curr.lng - center[1]);
+    if (drift < 0.00035) return;
+
+    suppressNextMoveRef.current = true;
     map.flyTo({
-      center: [center[1], center[0]],
-      zoom: 14,
-      duration: 800,
+      center: nextCenter,
+      zoom: clamp(map.getZoom(), 8, 14),
+      speed: 1.2,
+      curve: 1.42,
+      easing: (t) => t * (2 - t),
       essential: true,
     });
   }, [center]);
 
-  /* ── Render markers ─────────────────────────────────────── */
+  useEffect(() => {
+    if (!selectedStationId) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const selectedStation = stations.find((station) => station._id === selectedStationId);
+    if (!selectedStation) return;
+
+    const [lng, lat] = selectedStation.coordinates.coordinates;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    suppressNextMoveRef.current = true;
+    map.flyTo({
+      center: [lng, lat],
+      zoom: clamp(Math.max(map.getZoom(), 12.75), 8, 15),
+      speed: 1.08,
+      curve: 1.42,
+      easing: (t) => t * (2 - t),
+      essential: true,
+    });
+  }, [selectedStationId, stations]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     const renderMarkers = () => {
-      // Clear old markers
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
 
-      // Read theme-aware colors from CSS variables
-      const styles = getComputedStyle(document.documentElement);
-      const colors = {
-        bg: styles.getPropertyValue('--marker-bg').trim(),
-        border: styles.getPropertyValue('--marker-border').trim(),
-        text: styles.getPropertyValue('--marker-text').trim(),
-        selectedBg: styles.getPropertyValue('--marker-selected-bg').trim(),
-        selectedBorder: styles.getPropertyValue('--marker-selected-border').trim(),
-      };
+      const colors = readMarkerColors();
 
-      stations.forEach((station) => {
-        const [lng, lat] = station.coordinates.coordinates;
-        if (!lat || !lng) return;
+      const anyRealPrice = stations.some(
+        (s) => s.prices?.[selectedFuel] !== null && s.prices?.[selectedFuel] !== undefined
+      );
+      const usePlaceholder = !anyRealPrice;
 
+      for (const point of displayPoints) {
+        if (point.kind === 'cluster') {
+          const element = createClusterMarkerElement(point.count, point.minPrice, colors);
+          element.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onMapInteraction?.();
+            map.easeTo({
+              center: [point.lng, point.lat],
+              zoom: clamp(map.getZoom() + 1.25, map.getZoom(), 14),
+              duration: 420,
+            });
+          });
+          const marker = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([point.lng, point.lat]).addTo(map);
+          markersRef.current.push(marker);
+          continue;
+        }
+
+        const { station, lat, lng } = point;
         const isSelected = station._id === selectedStationId;
-
-        const el = createMarkerElement(station, selectedFuel, isSelected, colors);
-
-        // Click handler
-        el.addEventListener('click', (e) => {
+        const { element, hasPrice } = createMarkerElement(station, selectedFuel, isSelected, colors, usePlaceholder);
+        element.addEventListener('click', (e) => {
           e.stopPropagation();
           onStationSelect(station);
         });
-
-        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+        const marker = new maplibregl.Marker({
+          element,
+          anchor: hasPrice ? 'bottom' : 'center',
+        })
           .setLngLat([lng, lat])
           .addTo(map);
-
         markersRef.current.push(marker);
-      });
+      }
     };
 
-    // If map style is loaded, render immediately; otherwise wait for 'styledata' event
     if (map.isStyleLoaded()) {
       renderMarkers();
     } else {
       map.once('styledata', renderMarkers);
     }
-  }, [stations, selectedFuel, selectedStationId, onStationSelect, theme]);
+  }, [displayPoints, onMapInteraction, onStationSelect, selectedFuel, selectedStationId, stations, theme]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="h-full w-full"
-      style={{ background: 'var(--bg-primary)' }}
-    />
-  );
+  return <div ref={containerRef} className="h-full w-full" style={{ background: 'var(--bg-primary)' }} />;
 };
 
 export default MapView;

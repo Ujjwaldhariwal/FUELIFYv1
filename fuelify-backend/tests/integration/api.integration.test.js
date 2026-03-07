@@ -13,6 +13,7 @@ const { app } = require('../../src/server');
 const Station = require('../../src/models/Station');
 const Owner = require('../../src/models/Owner');
 const PriceHistory = require('../../src/models/PriceHistory');
+const Claim = require('../../src/models/Claim');
 
 let mongoServer;
 const TEST_DB_NAME = 'fuelify_integration_tests';
@@ -26,6 +27,8 @@ const makeStation = async ({
   lat = 39.9612,
   lng = -82.9988,
   city = 'Columbus',
+  status = 'VERIFIED',
+  claimedBy = null,
 }) => {
   return Station.create({
     slug,
@@ -42,7 +45,9 @@ const makeStation = async ({
     phone: '+1-555-000-1111',
     website: 'https://fuelify.example',
     hours: 'Mon-Sun 6am-11pm',
-    status: 'VERIFIED',
+    status,
+    claimedBy,
+    claimedAt: claimedBy ? new Date() : null,
     prices: {
       regular,
       midgrade: null,
@@ -83,6 +88,39 @@ const makeVerifiedOwner = async ({ stationId, email, phone, password = 'DevPass1
   });
 };
 
+const makePendingOwner = async ({
+  stationId,
+  email,
+  phone,
+  otp = '123456',
+  name = 'Pending',
+}) => {
+  const verificationOtp = await bcrypt.hash(otp, 8);
+  const passwordHash = await bcrypt.hash('PendingPass123!', 12);
+  return Owner.create({
+    stationId,
+    name,
+    email,
+    phone,
+    passwordHash,
+    role: 'OWNER',
+    isVerified: false,
+    verificationOtp,
+    verificationExpiry: new Date(Date.now() + 10 * 60 * 1000),
+    lastLogin: null,
+  });
+};
+
+const loginAsOwner = async ({ identifier, password = 'DevPass123!' }) => {
+  const loginRes = await request(app).post('/api/auth/login').send({
+    identifier,
+    password,
+  });
+  expect(loginRes.status).toBe(200);
+  expect(loginRes.body.token).toBeTruthy();
+  return loginRes.body.token;
+};
+
 beforeAll(async () => {
   const externalUri = process.env.TEST_MONGODB_URI || process.env.MONGODB_URI;
   if (externalUri) {
@@ -102,7 +140,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([Station.deleteMany({}), Owner.deleteMany({}), PriceHistory.deleteMany({})]);
+  await Promise.all([Station.deleteMany({}), Owner.deleteMany({}), PriceHistory.deleteMany({}), Claim.deleteMany({})]);
 });
 
 describe('Fuelify backend integration', () => {
@@ -111,6 +149,7 @@ describe('Fuelify backend integration', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
     expect(res.body.timestamp).toBeDefined();
+    expect(res.headers['x-request-id']).toBeTruthy();
   });
 
   test('GET /api/stations returns stations sorted by selected fuel price', async () => {
@@ -141,6 +180,75 @@ describe('Fuelify backend integration', () => {
     expect(res.body.stations[1]._id).toBe(expensive._id.toString());
   });
 
+  test('GET /api/stations supports bbox viewport mode', async () => {
+    const inBounds = await makeStation({
+      name: 'Viewport In Bounds',
+      slug: 'viewport-in-bounds-columbus-oh',
+      regular: 3.299,
+      lat: 40.02,
+      lng: -82.95,
+    });
+    await makeStation({
+      name: 'Viewport Out Bounds',
+      slug: 'viewport-out-bounds-columbus-oh',
+      regular: 3.199,
+      lat: 41.4,
+      lng: -84.2,
+    });
+
+    const res = await request(app).get('/api/stations').query({
+      bbox: '-83.20,39.80,-82.70,40.20',
+      fuel: 'regular',
+      limit: 200,
+      zoom: 12,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.queryMode).toBe('bbox');
+    expect(res.body.total).toBe(1);
+    expect(res.body.stations).toHaveLength(1);
+    expect(res.body.stations[0]._id).toBe(inBounds._id.toString());
+  });
+
+  test('GET /api/stations/clusters returns aggregated viewport clusters', async () => {
+    await makeStation({
+      name: 'Cluster A One',
+      slug: 'cluster-a-one-columbus-oh',
+      regular: 3.099,
+      lat: 40.001,
+      lng: -82.901,
+    });
+    await makeStation({
+      name: 'Cluster A Two',
+      slug: 'cluster-a-two-columbus-oh',
+      regular: 3.299,
+      lat: 40.011,
+      lng: -82.911,
+    });
+    await makeStation({
+      name: 'Cluster B One',
+      slug: 'cluster-b-one-columbus-oh',
+      regular: 3.499,
+      lat: 39.901,
+      lng: -82.801,
+    });
+
+    const res = await request(app).get('/api/stations/clusters').query({
+      bbox: '-83.20,39.80,-82.70,40.20',
+      zoom: 9,
+      fuel: 'regular',
+      limit: 50,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.queryMode).toBe('bbox_cluster');
+    expect(res.body.totalStations).toBe(3);
+    expect(res.body.totalClusters).toBeGreaterThanOrEqual(2);
+    expect(Array.isArray(res.body.clusters)).toBe(true);
+    expect(res.body.clusters.length).toBeGreaterThanOrEqual(2);
+    expect(res.body.clusters[0].count).toBeGreaterThanOrEqual(1);
+  });
+
   test('POST /api/auth/login returns token + owner + station for verified owner', async () => {
     const station = await makeStation({
       name: 'Login Station',
@@ -164,6 +272,61 @@ describe('Fuelify backend integration', () => {
     expect(res.body.token).toBeTruthy();
     expect(res.body.owner.email).toBe('owner.login@fuelify.local');
     expect(res.body.station._id).toBe(station._id.toString());
+  });
+
+  test('POST /api/auth/claim/initiate returns 409 for an already verified owner and does not downgrade owner', async () => {
+    const station = await makeStation({
+      name: 'Claim Initiate Guard Station',
+      slug: 'claim-initiate-guard-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    const owner = await makeVerifiedOwner({
+      stationId: station._id,
+      email: 'owner.claim.guard@fuelify.local',
+      phone: '+15550009991',
+      password: 'DevPass123!',
+    });
+
+    const res = await request(app).post('/api/auth/claim/initiate').send({
+      stationId: station._id.toString(),
+      phone: owner.phone,
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Station already claimed and verified. Please log in instead.');
+
+    const ownerAfter = await Owner.findById(owner._id).lean();
+    expect(ownerAfter.isVerified).toBe(true);
+  });
+
+  test('POST /api/auth/claim/verify rejects invalid email format', async () => {
+    const station = await makeStation({
+      name: 'Claim Verify Email Station',
+      slug: 'claim-verify-email-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    await makePendingOwner({
+      stationId: station._id,
+      email: 'pending.claim.verify@fuelify.local',
+      phone: '+15550009992',
+      otp: '123456',
+    });
+
+    const res = await request(app).post('/api/auth/claim/verify').send({
+      stationId: station._id.toString(),
+      phone: '+15550009992',
+      otp: '123456',
+      name: 'Invalid Email Owner',
+      email: 'invalid-email',
+      password: 'DevPass123!',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid email format');
   });
 
   test('POST /api/dashboard/prices updates station prices and logs PriceHistory', async () => {
@@ -213,5 +376,254 @@ describe('Fuelify backend integration', () => {
     const historyDoc = await PriceHistory.findOne({ stationId: station._id }).lean();
     expect(historyDoc.submittedBy.toString()).toBe(owner._id.toString());
     expect(historyDoc.prices.regular).toBeCloseTo(3.111, 3);
+  });
+
+  test('POST /api/dashboard/prices rejects updates for non-verified stations', async () => {
+    const station = await makeStation({
+      name: 'Claimed-Only Station',
+      slug: 'claimed-only-station-columbus-oh',
+      regular: 3.599,
+      status: 'CLAIMED',
+    });
+
+    await makeVerifiedOwner({
+      stationId: station._id,
+      email: 'owner.claimedonly@fuelify.local',
+      phone: '+15550004444',
+      password: 'DevPass123!',
+    });
+
+    const loginRes = await request(app).post('/api/auth/login').send({
+      identifier: 'owner.claimedonly@fuelify.local',
+      password: 'DevPass123!',
+    });
+    expect(loginRes.status).toBe(200);
+
+    const token = loginRes.body.token;
+    const updateRes = await request(app)
+      .post('/api/dashboard/prices')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ regular: 3.011 });
+
+    expect(updateRes.status).toBe(403);
+    expect(updateRes.body.error).toMatch(/enabled after verification approval/i);
+  });
+
+  test('POST /api/stations/:stationId/report rejects malformed stationId', async () => {
+    const res = await request(app).post('/api/stations/not-an-objectid/report').send({
+      type: 'WRONG_INFO',
+      data: { message: 'bad' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid stationId/);
+    expect(res.body.code).toBe('INVALID_OBJECT_ID');
+    expect(res.body.requestId).toBeTruthy();
+  });
+
+  test('claim lifecycle supports submit, status, and retry', async () => {
+    const owner = await Owner.create({
+      stationId: new mongoose.Types.ObjectId(),
+      name: 'Claim Owner',
+      email: 'claim.owner@fuelify.local',
+      phone: '+15558889999',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+
+    const station = await makeStation({
+      name: 'Claim Station',
+      slug: 'claim-station-columbus-oh',
+      regular: null,
+      status: 'CLAIMED',
+      claimedBy: owner._id,
+    });
+    await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
+
+    const token = await loginAsOwner({ identifier: owner.email });
+
+    const createRes = await request(app)
+      .post('/api/claims')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        stationId: station._id.toString(),
+        evidence: {
+          businessName: 'Test Fuel LLC',
+          businessRegistrationId: 'OH-123456',
+          claimantName: 'Jane Owner',
+          claimantEmail: 'owner@testfuel.example',
+          claimantPhone: '+15558889999',
+          website: 'https://testfuel.example',
+        },
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.claimId).toBeTruthy();
+    expect(createRes.body.status).toBeTruthy();
+
+    const statusRes = await request(app)
+      .get(`/api/claims/${createRes.body.claimId}/status`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body.status).toBeTruthy();
+    expect(statusRes.body.requestId).toBeTruthy();
+    expect(statusRes.headers['x-request-id']).toBeTruthy();
+
+    const summaryRes = await request(app).get(`/api/claims/station/${station._id.toString()}/summary`);
+    expect(summaryRes.status).toBe(200);
+    expect(summaryRes.body.stationId).toBe(station._id.toString());
+    expect(summaryRes.body.requestId).toBeTruthy();
+    expect(summaryRes.body.claim).toBeTruthy();
+    expect(summaryRes.body.claim.claimId).toBe(createRes.body.claimId);
+    expect(summaryRes.body.risk).toBeUndefined();
+    expect(summaryRes.body.claim.reasonCode).toBeUndefined();
+    expect(summaryRes.body.claim.message).toBeUndefined();
+    expect(summaryRes.body.claim.decisionConfidence).toBeUndefined();
+    expect(summaryRes.body.claim.sourceChecks).toBeUndefined();
+
+    const storedClaim = await Claim.findById(createRes.body.claimId).lean();
+    if (storedClaim.status === 'REJECTED' || storedClaim.status === 'BLOCKED') {
+      const retryRes = await request(app)
+        .post(`/api/claims/${storedClaim._id}/retry`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          evidence: {
+            website: 'https://testfuel.example',
+          },
+        });
+
+      expect([200, 429]).toContain(retryRes.status);
+    }
+  });
+
+  test('GET /api/claims/station/:stationId/summary hides sensitive fields publicly and reveals them to owner', async () => {
+    const owner = await Owner.create({
+      stationId: new mongoose.Types.ObjectId(),
+      name: 'Summary Owner',
+      email: 'summary.owner@fuelify.local',
+      phone: '+15550009993',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+
+    const station = await makeStation({
+      name: 'Summary Station',
+      slug: 'summary-station-columbus-oh',
+      regular: 3.299,
+      status: 'CLAIMED',
+      claimedBy: owner._id,
+    });
+    await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
+
+    const token = await loginAsOwner({ identifier: owner.email });
+    const claimRes = await request(app)
+      .post('/api/claims')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        stationId: station._id.toString(),
+        evidence: {
+          businessName: station.name,
+          businessRegistrationId: 'OH-129876',
+          claimantName: owner.name,
+          claimantEmail: owner.email,
+          claimantPhone: owner.phone,
+          website: station.website,
+        },
+      });
+    expect(claimRes.status).toBe(201);
+
+    const publicRes = await request(app).get(`/api/claims/station/${station._id.toString()}/summary`);
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.risk).toBeUndefined();
+    expect(publicRes.body.claim).toHaveProperty('claimId');
+    expect(publicRes.body.claim.reasonCode).toBeUndefined();
+    expect(publicRes.body.claim.sourceChecks).toBeUndefined();
+
+    const ownerRes = await request(app)
+      .get(`/api/claims/station/${station._id.toString()}/summary`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.risk).toBeTruthy();
+    expect(ownerRes.body.risk.status).toBeTruthy();
+    expect(ownerRes.body.claim).toHaveProperty('reasonCode');
+    expect(ownerRes.body.claim).toHaveProperty('message');
+    expect(ownerRes.body.claim).toHaveProperty('decisionConfidence');
+    expect(ownerRes.body.claim).toHaveProperty('sourceChecks');
+    expect(ownerRes.body.claim).toHaveProperty('retryCount');
+    expect(ownerRes.body.claim).toHaveProperty('decidedAt');
+  });
+
+  test('POST /api/claims requires authenticated owner token', async () => {
+    const station = await makeStation({
+      name: 'Unowned Claim Station',
+      slug: 'unowned-claim-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    const res = await request(app).post('/api/claims').send({
+      stationId: station._id.toString(),
+      evidence: {
+        businessName: 'Unowned Fuel LLC',
+        businessRegistrationId: 'OH-654321',
+        claimantName: 'Unauthorized User',
+        claimantEmail: 'unauthorized@example.com',
+        claimantPhone: '+15550000000',
+      },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/no token/i);
+  });
+
+  test('approved claim promotes claimed station to VERIFIED', async () => {
+    const owner = await Owner.create({
+      stationId: new mongoose.Types.ObjectId(),
+      name: 'Authority Owner',
+      email: 'authority.owner@fuelify.local',
+      phone: '+15557776666',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+
+    const station = await makeStation({
+      name: 'Authority Station',
+      slug: 'authority-station-columbus-oh',
+      regular: 3.455,
+      status: 'CLAIMED',
+      claimedBy: owner._id,
+    });
+
+    await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
+
+    const token = await loginAsOwner({ identifier: owner.email });
+
+    const createRes = await request(app)
+      .post('/api/claims')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        stationId: station._id.toString(),
+        evidence: {
+          businessName: 'Authority Station',
+          businessRegistrationId: 'OH-998877',
+          claimantName: 'Authority Owner',
+          claimantEmail: 'owner@authorityfuel.com',
+          claimantPhone: '+15557776666',
+          website: 'https://authorityfuel.com',
+        },
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(['APPROVED', 'REJECTED', 'BLOCKED']).toContain(createRes.body.status);
+
+    const stationAfter = await Station.findById(station._id).lean();
+    if (createRes.body.status === 'APPROVED') {
+      expect(stationAfter.status).toBe('VERIFIED');
+    } else {
+      expect(stationAfter.status).toBe('CLAIMED');
+    }
   });
 });

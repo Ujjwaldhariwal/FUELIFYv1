@@ -7,6 +7,7 @@ import type {
   Owner,
   PriceHistoryEntry,
   Station,
+  StationClustersResponse,
   StationClaimSummary,
   StationPrices,
   StationsResponse,
@@ -75,9 +76,41 @@ export const fetchNearbyStations = async (
   lng: number,
   radius = 25,
   fuel = 'regular',
-  limit = 20
+  limit = 20,
+  signal?: AbortSignal
 ): Promise<StationsResponse> => {
-  const { data } = await api.get('/stations', { params: { lat, lng, radius, fuel, limit } });
+  const { data } = await api.get('/stations', { params: { lat, lng, radius, fuel, limit }, signal });
+  return data;
+};
+
+export const fetchStationsByViewport = async (
+  bbox: { west: number; south: number; east: number; north: number },
+  fuel = 'regular',
+  limit = 300,
+  zoom?: number,
+  page = 1,
+  signal?: AbortSignal
+): Promise<StationsResponse & { queryMode?: string }> => {
+  const bboxParam = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+  const { data } = await api.get('/stations', {
+    params: { bbox: bboxParam, fuel, limit, zoom, page },
+    signal,
+  });
+  return data;
+};
+
+export const fetchStationClustersByViewport = async (
+  bbox: { west: number; south: number; east: number; north: number },
+  fuel = 'regular',
+  zoom = 9,
+  limit = 300,
+  signal?: AbortSignal
+): Promise<StationClustersResponse> => {
+  const bboxParam = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+  const { data } = await api.get('/stations/clusters', {
+    params: { bbox: bboxParam, fuel, zoom, limit },
+    signal,
+  });
   return data;
 };
 

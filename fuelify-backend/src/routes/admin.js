@@ -3,17 +3,13 @@ const express = require('express');
 
 const router = express.Router();
 const Station = require('../models/Station');
+const mongoose = require('mongoose');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { validateObjectIdParam } = require('../middleware/validateObjectId');
+const { scheduleStationCacheInvalidation } = require('../services/stationCache');
 
-// All admin routes require auth + admin role (or ADMIN_SECRET_KEY header)
-router.use((req, res, next) => {
-  const adminKey = req.headers['x-admin-key'];
-  if (adminKey && adminKey === process.env.ADMIN_SECRET_KEY) {
-    req.isAdmin = true;
-    return next();
-  }
-  return requireAuth(req, res, next);
-});
+// All admin routes require auth + ADMIN role
+router.use(requireAuth);
 router.use(requireAdmin);
 
 // GET /api/admin/stations
@@ -44,17 +40,33 @@ router.get('/stations', async (req, res, next) => {
 });
 
 // PATCH /api/admin/stations/:id/verify
-router.patch('/stations/:id/verify', async (req, res, next) => {
+router.patch('/stations/:id/verify', validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    const { status } = req.body;
+    const { status, claimedBy } = req.body;
     const valid = ['UNCLAIMED', 'CLAIMED', 'VERIFIED'];
 
     if (!valid.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const station = await Station.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    if (status === 'VERIFIED' && !claimedBy) {
+      return res.status(400).json({ error: 'claimedBy is required for VERIFIED status' });
+    }
+    if (claimedBy && !mongoose.Types.ObjectId.isValid(claimedBy)) {
+      return res.status(400).json({ error: 'Invalid claimedBy' });
+    }
+
+    const update = { status };
+    if (status === 'VERIFIED') {
+      update.claimedBy = claimedBy;
+      update.claimedAt = new Date();
+    }
+    const station = await Station.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!station) return res.status(404).json({ error: 'Station not found' });
+    await scheduleStationCacheInvalidation({
+      reason: 'ADMIN_STATION_STATUS_UPDATED',
+      stationId: station._id.toString(),
+    });
 
     return res.json({ station });
   } catch (err) {

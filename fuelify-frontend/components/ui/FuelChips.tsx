@@ -1,4 +1,4 @@
-//ap/components/ui/FuelChips.tsx
+//app/components/ui/FuelChips.tsx
 'use client';
 
 import { memo } from 'react';
@@ -15,7 +15,6 @@ const FUEL_OPTIONS: { key: FuelType; label: string; shortLabel: string }[] = [
 interface FuelChipsProps {
   selected: FuelType;
   onSelect: (fuel: FuelType) => void;
-  /** Optional: pass in price range per fuel type to show lowest price on each chip */
   priceRanges?: Partial<Record<FuelType, { min: number | null; max: number | null }>>;
 }
 
@@ -40,7 +39,7 @@ export const FuelChips = memo(({ selected, onSelect, priceRanges }: FuelChipsPro
               'cursor-pointer select-none',
               'focus:outline-none active:scale-95',
               isActive
-                ? 'bg-[var(--accent-primary)] text-white shadow-[0_2px_10px_rgba(99,102,241,0.35)]'
+                ? 'bg-brand-gradient text-white shadow-[var(--shadow-accent)]'
                 : [
                     'bg-[var(--bg-elevated)] text-[var(--text-secondary)]',
                     'hover:text-[var(--text-primary)]',
@@ -48,11 +47,9 @@ export const FuelChips = memo(({ selected, onSelect, priceRanges }: FuelChipsPro
                   ].join(' '),
             ].join(' ')}
           >
-            {/* Show short label on mobile, full on desktop */}
             <span className="sm:hidden">{shortLabel}</span>
             <span className="hidden sm:inline">{label}</span>
 
-            {/* Price badge */}
             {hasPrice && (
               <span
                 className={[

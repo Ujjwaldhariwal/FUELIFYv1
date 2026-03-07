@@ -1,10 +1,13 @@
 // fuelify-frontend/services/api.ts
 import axios, { AxiosError } from 'axios';
 import type {
+  ApiError,
+  ClaimStatus,
   DashboardAnalytics,
   Owner,
   PriceHistoryEntry,
   Station,
+  StationClaimSummary,
   StationPrices,
   StationsResponse,
 } from '@/types';
@@ -32,13 +35,39 @@ api.interceptors.response.use(
   (err: AxiosError) => {
     if (err.response?.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('fuelify_token');
-      if (window.location.pathname.startsWith('/dashboard') || window.location.pathname === '/login') {
-        window.location.href = '/login';
+      if (window.location.pathname.startsWith('/dashboard') || window.location.pathname === '/dashboard/login') {
+        window.location.href = '/dashboard/login';
       }
     }
     return Promise.reject(err);
   }
 );
+
+export interface ApiErrorInfo {
+  message: string;
+  code?: string;
+  requestId?: string;
+  status?: number;
+}
+
+export const parseApiError = (error: unknown): ApiErrorInfo => {
+  const fallback: ApiErrorInfo = { message: 'Unexpected error' };
+  if (!axios.isAxiosError(error)) return fallback;
+
+  const data = (error.response?.data || {}) as Partial<ApiError>;
+  return {
+    message: data.error || data.message || error.message || fallback.message,
+    code: data.code,
+    requestId: data.requestId,
+    status: error.response?.status,
+  };
+};
+
+export const formatApiErrorForToast = (error: unknown): string => {
+  const parsed = parseApiError(error);
+  const suffix = [parsed.code, parsed.requestId ? `ref:${parsed.requestId}` : null].filter(Boolean).join(' | ');
+  return suffix ? `${parsed.message} (${suffix})` : parsed.message;
+};
 
 // Public: Stations
 export const fetchNearbyStations = async (
@@ -59,6 +88,11 @@ export const fetchStationBySlug = async (
   return data;
 };
 
+export const fetchStationById = async (id: string): Promise<{ station: Station }> => {
+  const { data } = await api.get(`/stations/id/${id}`);
+  return data;
+};
+
 export const searchStations = async (q: string, state = 'OH'): Promise<{ stations: Station[] }> => {
   const { data } = await api.get('/stations/search', { params: { q, state } });
   return data;
@@ -74,10 +108,13 @@ export const reportStation = async (
 };
 
 // Public: Auth / Claim
-export const inititateClaim = async (stationId: string, phone: string) => {
+export const initiateClaim = async (stationId: string, phone: string) => {
   const { data } = await api.post('/auth/claim/initiate', { stationId, phone });
   return data;
 };
+
+// Backward compatibility for older frontend call sites.
+export const inititateClaim = initiateClaim;
 
 export const verifyClaim = async (payload: {
   stationId: string;
@@ -93,6 +130,51 @@ export const verifyClaim = async (payload: {
 
 export const resendOtp = async (phone: string, stationId: string) => {
   const { data } = await api.post('/auth/resend-otp', { phone, stationId });
+  return data;
+};
+
+export interface ClaimEvidencePayload {
+  businessName: string;
+  businessRegistrationId: string;
+  claimantName: string;
+  claimantEmail: string;
+  claimantPhone: string;
+  website?: string;
+}
+
+export interface ClaimMutationResponse {
+  claimId?: string;
+  status: ClaimStatus;
+  reasonCode: string | null;
+  message: string;
+  retryAt: string | null;
+  slaEta: string | null;
+  requestId: string;
+}
+
+export const submitClaimVerification = async (
+  stationId: string,
+  evidence: ClaimEvidencePayload
+): Promise<ClaimMutationResponse> => {
+  const { data } = await api.post('/claims', { stationId, evidence });
+  return data;
+};
+
+export const getClaimStatus = async (claimId: string): Promise<ClaimMutationResponse> => {
+  const { data } = await api.get(`/claims/${claimId}/status`);
+  return data;
+};
+
+export const retryClaimVerification = async (
+  claimId: string,
+  evidence?: Partial<ClaimEvidencePayload>
+): Promise<ClaimMutationResponse> => {
+  const { data } = await api.post(`/claims/${claimId}/retry`, evidence ? { evidence } : undefined);
+  return data;
+};
+
+export const getStationClaimSummary = async (stationId: string): Promise<StationClaimSummary> => {
+  const { data } = await api.get(`/claims/station/${stationId}/summary`);
   return data;
 };
 

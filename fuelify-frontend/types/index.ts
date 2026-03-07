@@ -111,6 +111,9 @@ export interface AuthState {
 
 export interface ApiError {
   error: string;
+  code?: string;
+  requestId?: string;
+  message?: string;
 }
 
 export interface StationsResponse {
@@ -124,4 +127,43 @@ export interface DashboardAnalytics {
   lastPriceUpdate: string | null;
   currentRegularPrice: number | null;
   rankInArea: number | null;
+}
+
+export type ClaimStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
+export type RiskStatus = 'clean' | 'watchlist' | 'blocked';
+
+export interface ClaimSummaryRisk {
+  status: RiskStatus;
+  score: number;
+  reasons: string[];
+  evaluatedAt: string | null;
+  blockedAt: string | null;
+}
+
+export interface ClaimSummaryClaim {
+  claimId: string;
+  status: ClaimStatus;
+  reasonCode: string | null;
+  message: string;
+  decisionConfidence: number;
+  sourceChecks: {
+    googleMatch: boolean;
+    osmMatch: boolean;
+    stateRegistryMatch: boolean;
+  };
+  retryCount: number;
+  retryAt: string | null;
+  canRetry: boolean;
+  slaEta: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StationClaimSummary {
+  stationId: string;
+  stationStatus: StationStatus;
+  risk: ClaimSummaryRisk;
+  claim: ClaimSummaryClaim | null;
+  requestId: string;
 }

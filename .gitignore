@@ -9,6 +9,8 @@ dist/
 build/
 coverage/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Local environment files
 .env

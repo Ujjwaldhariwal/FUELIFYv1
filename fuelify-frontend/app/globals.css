@@ -5,31 +5,30 @@
 
 /* ─── Design Tokens ─── */
 :root {
-  --bg-primary:    #F5F7FF;
+  /* ── Surfaces ─────────────────────────────── */
+  --bg-primary:    #FAFAFA;
   --bg-surface:    #FFFFFF;
   --bg-card:       #FFFFFF;
-  --bg-elevated:   #ECEFFE;
-  --bg-glass:      rgba(255, 255, 255, 0.80);
+  --bg-elevated:   #FFF0EC;
+  --bg-glass:      rgba(255, 255, 255, 0.82);
 
-  --border:        rgba(79, 70, 229, 0.10);
-  --border-strong: rgba(79, 70, 229, 0.24);
+  /* ── Borders ──────────────────────────────── */
+  --border:        rgba(255, 99, 71, 0.10);
+  --border-strong: rgba(255, 99, 71, 0.25);
 
-  --text-primary:   #0B0F1A;
-  --text-secondary: #4A5470;
-  --text-muted:     #8896AE;
+  /* ── Text ─────────────────────────────────── */
+  --text-primary:   #1A1A1A;
+  --text-secondary: #5A5A6E;
+  --text-muted:     #9CA3AF;
 
-  --accent-primary: #4F46E5;
-  --accent-violet:  #7C3AED;
-  --accent-green:   #059669;
-  --accent-amber:   #D97706;
-  --accent-red:     #DC2626;
+  /* ── Brand Accent (Coral-Orange) ──────────── */
+  --accent-primary: #FF6347;
+  --accent-hover:   #E8522E;
+  --accent-light:   #FF8A6A;
+  --accent-muted:   rgba(255, 99, 71, 0.12);
 
-  /* Legacy alias */
-  --accent-blue: #4F46E5;
-
-  /* ── Overlay & Glass ──────────────────────── */
-  --bg-overlay:       rgba(0, 0, 0, 0.5);
-  --bg-glass-strong:  rgba(255, 255, 255, 0.92);
+  /* ── Secondary Accent (Warm) ──────────────── */
+  --accent-secondary: #FF8C42;
 
   /* ── Semantic Status ─────────────────────── */
   --color-success:       #059669;
@@ -38,85 +37,109 @@
   --color-warning-muted: rgba(217, 119, 6, 0.12);
   --color-error:         #DC2626;
   --color-error-muted:   rgba(220, 38, 38, 0.12);
-  --color-info:          #4F46E5;
-  --color-info-muted:    rgba(79, 70, 229, 0.12);
+  --color-info:          #FF6347;
+  --color-info-muted:    rgba(255, 99, 71, 0.10);
+
+  /* ── Overlay & Glass ──────────────────────── */
+  --bg-overlay:       rgba(0, 0, 0, 0.5);
+  --bg-glass-strong:  rgba(255, 255, 255, 0.94);
 
   /* ── Shadows ─────────────────────────────── */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+  --shadow-accent: 0 4px 14px rgba(255, 99, 71, 0.25);
 
   /* ── Interactive States ─────────────────── */
-  --hover-overlay: rgba(0, 0, 0, 0.04);
-  --press-overlay: rgba(0, 0, 0, 0.08);
-  --focus-ring:    rgba(79, 70, 229, 0.5);
+  --hover-overlay: rgba(0, 0, 0, 0.03);
+  --press-overlay: rgba(0, 0, 0, 0.06);
+  --focus-ring:    rgba(255, 99, 71, 0.4);
 
   /* ── Map Tokens ──────────────────────────── */
   --marker-bg:              #FFFFFF;
-  --marker-border:          rgba(0, 0, 0, 0.12);
-  --marker-text:            #0B0F1A;
-  --marker-selected-bg:     #4F46E5;
-  --marker-selected-border: #818CF8;
+  --marker-border:          rgba(0, 0, 0, 0.10);
+  --marker-text:            #1A1A1A;
+  --marker-selected-bg:     #FF6347;
+  --marker-selected-border: #FF8A6A;
   --marker-selected-text:   #FFFFFF;
+
+  /* ── Legacy aliases ──────────────────────── */
+  --accent-blue:   #FF6347;
+  --accent-green:  #059669;
+  --accent-amber:  #D97706;
+  --accent-red:    #DC2626;
+  --accent-violet: #FF8C42;
 }
 
 html.dark {
-  --bg-primary:    #070B14;
-  --bg-surface:    #0D1321;
-  --bg-card:       #111927;
-  --bg-elevated:   #182236;
-  --bg-glass:      rgba(13, 19, 33, 0.82);
+  /* ── Surfaces ─────────────────────────────── */
+  --bg-primary:    #0C0C0F;
+  --bg-surface:    #151518;
+  --bg-card:       #1C1C21;
+  --bg-elevated:   #2A2024;
+  --bg-glass:      rgba(15, 15, 18, 0.85);
 
+  /* ── Borders ──────────────────────────────── */
   --border:        rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(99, 102, 241, 0.30);
+  --border-strong: rgba(255, 99, 71, 0.30);
 
-  --text-primary:   #EDF2FF;
-  --text-secondary: #7B8FA8;
-  --text-muted:     #374357;
+  /* ── Text ─────────────────────────────────── */
+  --text-primary:   #F5F5F5;
+  --text-secondary: #A0A0B0;
+  --text-muted:     #555566;
 
-  --accent-primary: #6366F1;
-  --accent-violet:  #8B5CF6;
-  --accent-green:   #10B981;
-  --accent-amber:   #F59E0B;
-  --accent-red:     #EF4444;
+  /* ── Brand Accent (Coral-Orange) ──────────── */
+  --accent-primary: #FF6F55;
+  --accent-hover:   #FF8A6A;
+  --accent-light:   #FF9E85;
+  --accent-muted:   rgba(255, 111, 85, 0.14);
 
-  --accent-blue: #6366F1;
-
-  /* ── Overlay & Glass ──────────────────────── */
-  --bg-overlay:       rgba(0, 0, 0, 0.7);
-  --bg-glass-strong:  rgba(13, 19, 33, 0.95);
+  /* ── Secondary Accent (Warm) ──────────────── */
+  --accent-secondary: #FF9A5C;
 
   /* ── Semantic Status ─────────────────────── */
   --color-success:       #10B981;
-  --color-success-muted: rgba(16, 185, 129, 0.12);
+  --color-success-muted: rgba(16, 185, 129, 0.14);
   --color-warning:       #F59E0B;
-  --color-warning-muted: rgba(245, 158, 11, 0.12);
+  --color-warning-muted: rgba(245, 158, 11, 0.14);
   --color-error:         #EF4444;
-  --color-error-muted:   rgba(239, 68, 68, 0.12);
-  --color-info:          #6366F1;
-  --color-info-muted:    rgba(99, 102, 241, 0.12);
+  --color-error-muted:   rgba(239, 68, 68, 0.14);
+  --color-info:          #FF6F55;
+  --color-info-muted:    rgba(255, 111, 85, 0.12);
+
+  /* ── Overlay & Glass ──────────────────────── */
+  --bg-overlay:       rgba(0, 0, 0, 0.7);
+  --bg-glass-strong:  rgba(15, 15, 18, 0.96);
 
   /* ── Shadows ─────────────────────────────── */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.15);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.18);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.22);
+  --shadow-accent: 0 4px 14px rgba(255, 111, 85, 0.30);
 
   /* ── Interactive States ─────────────────── */
-  --hover-overlay: rgba(255, 255, 255, 0.05);
-  --press-overlay: rgba(255, 255, 255, 0.08);
-  --focus-ring:    rgba(99, 102, 241, 0.5);
+  --hover-overlay: rgba(255, 255, 255, 0.04);
+  --press-overlay: rgba(255, 255, 255, 0.07);
+  --focus-ring:    rgba(255, 111, 85, 0.45);
 
   /* ── Map Tokens ──────────────────────────── */
-  --marker-bg:              #1E293B;
-  --marker-border:          rgba(255, 255, 255, 0.12);
-  --marker-text:            #FFFFFF;
-  --marker-selected-bg:     #4F46E5;
-  --marker-selected-border: #818CF8;
+  --marker-bg:              #1C1C21;
+  --marker-border:          rgba(255, 255, 255, 0.10);
+  --marker-text:            #F5F5F5;
+  --marker-selected-bg:     #FF6347;
+  --marker-selected-border: #FF8A6A;
   --marker-selected-text:   #FFFFFF;
+
+  /* ── Legacy aliases ──────────────────────── */
+  --accent-blue:   #FF6F55;
+  --accent-green:  #10B981;
+  --accent-amber:  #F59E0B;
+  --accent-red:    #EF4444;
+  --accent-violet: #FF9A5C;
 }
 
 /* ─── Base ─── */
@@ -156,8 +179,13 @@ body {
 }
 
 @keyframes marker-pulse {
-  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(16,185,129,0.55); }
-  50%       { transform: scale(1.09); box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(255,99,71,0.45); }
+  50%       { transform: scale(1.06); box-shadow: 0 0 0 8px rgba(255,99,71,0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(1.8); }
 }
 
 .fade-in-up { animation: fade-in-up 280ms cubic-bezier(0.22,1,0.36,1) both; }
@@ -187,10 +215,15 @@ body {
 
 /* ─── Gradient text ─── */
 .text-gradient {
-  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  background: linear-gradient(135deg, #FF6347 0%, #FF8C42 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* ─── Brand gradient backgrounds ─── */
+.bg-brand-gradient {
+  background: linear-gradient(135deg, #FF6347 0%, #FF8C42 100%);
 }
 
 /* ─── Scrollbar ─── */
@@ -230,12 +263,6 @@ body {
   border-top: none !important;
 }
 
-/* Style the zoom +/- icons */
-.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-  filter: var(--text-primary);
-}
-
-/* Attribution styling */
 .maplibregl-ctrl-attrib {
   background: var(--bg-glass) !important;
   backdrop-filter: blur(8px);
@@ -264,7 +291,7 @@ body {
 
 .fuelify-marker--selected {
   transform: scale(1.15);
-  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5));
+  filter: drop-shadow(0 0 10px rgba(255, 99, 71, 0.45));
   z-index: 10 !important;
 }
 

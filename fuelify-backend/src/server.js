@@ -16,6 +16,7 @@ const errorHandler = require('./middleware/errorHandler');
 const { requestContext } = require('./middleware/requestContext');
 const { apiLimiter } = require('./middleware/rateLimit');
 const { startRiskMonitor, stopRiskMonitor } = require('./services/riskMonitor');
+const { initializeStationCache, closeStationCache, getStationCacheProvider } = require('./services/stationCache');
 
 const createApp = () => {
   const app = express();
@@ -74,15 +75,18 @@ const connectDB = async () => {
 
 const startServer = async () => {
   await connectDB();
+  await initializeStationCache();
   const PORT = process.env.PORT || 5000;
   if (process.env.NODE_ENV !== 'test' && process.env.ENABLE_RISK_MONITOR !== 'false') {
     startRiskMonitor();
   }
-  return app.listen(PORT, () => console.log(`[Server] Running on port ${PORT}`));
+  return app.listen(PORT, () =>
+    console.log(`[Server] Running on port ${PORT} (station cache: ${getStationCacheProvider()})`)
+  );
 };
 
 if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, createApp, connectDB, startServer, stopRiskMonitor };
+module.exports = { app, createApp, connectDB, startServer, stopRiskMonitor, closeStationCache };

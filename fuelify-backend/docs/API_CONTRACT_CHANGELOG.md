@@ -28,3 +28,7 @@
     - `RISK_RESCORER_INTERVAL_MINUTES` (default `10`)
     - `RISK_RESCORER_BATCH_SIZE` (default `200`)
     - `RISK_RESCORER_STALE_HOURS` (default `12`)
+- Added station cache provider abstraction:
+  - `STATION_CACHE_MODE=memory|redis` (default `memory`)
+  - `REDIS_URL` required when `STATION_CACHE_MODE=redis`
+  - If Redis is unavailable, service falls back to memory cache without failing requests.

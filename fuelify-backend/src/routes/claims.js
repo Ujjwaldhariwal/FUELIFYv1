@@ -68,7 +68,7 @@ router.post('/', claimLimiter, async (req, res, next) => {
     });
 
     await applyStationRiskUpdate(stationId);
-    invalidateStationCache();
+    await invalidateStationCache();
 
     return res.status(201).json({
       claimId: claim._id,
@@ -204,7 +204,7 @@ router.post('/:id/retry', validateObjectIdParam('id'), claimLimiter, async (req,
     await claim.save();
 
     await applyStationRiskUpdate(claim.stationId);
-    invalidateStationCache();
+    await invalidateStationCache();
 
     return res.json({
       status: claim.status,

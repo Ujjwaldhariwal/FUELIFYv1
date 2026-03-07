@@ -78,7 +78,7 @@ router.get('/', async (req, res, next) => {
       limit,
       state: hasLocation ? null : typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH',
     };
-    const cached = getCachedStations(cacheParams);
+    const cached = await getCachedStations(cacheParams);
     if (cached) return res.json(cached);
 
     let stations = [];
@@ -152,7 +152,7 @@ router.get('/', async (req, res, next) => {
       limit,
       pages: Math.ceil(total / limit) || 1,
     };
-    setCachedStations(cacheParams, payload);
+    await setCachedStations(cacheParams, payload);
     return res.json(payload);
   } catch (err) {
     return next(err);

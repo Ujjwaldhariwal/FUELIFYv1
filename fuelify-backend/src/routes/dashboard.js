@@ -43,7 +43,7 @@ router.patch('/station', async (req, res, next) => {
     );
 
     if (!station) return res.status(404).json({ error: 'Station not found' });
-    invalidateStationCache();
+    await invalidateStationCache();
     return res.json({ station });
   } catch (err) {
     return next(err);
@@ -108,7 +108,7 @@ router.post('/prices', async (req, res, next) => {
       confidenceScore: 1.0,
     });
 
-    invalidateStationCache();
+    await invalidateStationCache();
     return res.json({ success: true, prices: station.prices });
   } catch (err) {
     return next(err);

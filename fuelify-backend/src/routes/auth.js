@@ -10,6 +10,7 @@ const Owner = require('../models/Owner');
 const { sendOtp, generateOtp, generateExpiry } = require('../services/otp');
 const { sendWelcomeEmail } = require('../services/email');
 const { otpLimiter, otpVerifyLimiter, loginLimiter } = require('../middleware/rateLimit');
+const { scheduleStationCacheInvalidation } = require('../services/stationCache');
 
 // Helper: sign JWT (7 day expiry)
 const signToken = (ownerId) => jwt.sign({ id: ownerId }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -124,6 +125,7 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
       { status: 'VERIFIED', claimedBy: owner._id, claimedAt: new Date() },
       { new: true }
     );
+    await scheduleStationCacheInvalidation({ reason: 'CLAIM_VERIFIED', stationId: stationId.toString() });
 
     sendWelcomeEmail(email, name, station.name).catch(console.error);
 

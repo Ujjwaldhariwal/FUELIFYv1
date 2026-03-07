@@ -5,6 +5,7 @@ const CACHE_VERSION = 'v1';
 const memoryCache = new Map();
 let activeProvider = 'memory';
 let redisClient = null;
+let invalidationMode = 'direct';
 
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -46,6 +47,7 @@ const deleteMemoryByPrefix = (prefix) => {
 };
 
 const initializeStationCache = async () => {
+  invalidationMode = (process.env.STATION_CACHE_INVALIDATION_MODE || 'direct').toLowerCase();
   const mode = (process.env.STATION_CACHE_MODE || 'memory').toLowerCase();
   if (mode !== 'redis') {
     activeProvider = 'memory';
@@ -139,6 +141,19 @@ const invalidateStationCache = async () => {
   deleteMemoryByPrefix(`${CACHE_PREFIX}${CACHE_VERSION}:`);
 };
 
+const scheduleStationCacheInvalidation = async (payload = {}) => {
+  if (invalidationMode === 'event') {
+    try {
+      const { publishDomainEvent } = require('./domainEvents');
+      await publishDomainEvent('station.cache.invalidate', payload);
+      return;
+    } catch (err) {
+      console.warn('[StationCache] Event invalidation unavailable; falling back to direct invalidation');
+    }
+  }
+  await invalidateStationCache();
+};
+
 const getStationCacheProvider = () => activeProvider;
 
 module.exports = {
@@ -148,4 +163,5 @@ module.exports = {
   getCachedStations,
   setCachedStations,
   invalidateStationCache,
+  scheduleStationCacheInvalidation,
 };

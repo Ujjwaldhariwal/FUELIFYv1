@@ -17,6 +17,11 @@ const { requestContext } = require('./middleware/requestContext');
 const { apiLimiter } = require('./middleware/rateLimit');
 const { startRiskMonitor, stopRiskMonitor } = require('./services/riskMonitor');
 const { initializeStationCache, closeStationCache, getStationCacheProvider } = require('./services/stationCache');
+const { initializeDomainEvents, closeDomainEvents, getDomainEventProvider } = require('./services/domainEvents');
+const {
+  startCacheInvalidationWorker,
+  stopCacheInvalidationWorker,
+} = require('./workers/cacheInvalidationWorker');
 
 const createApp = () => {
   const app = express();
@@ -75,13 +80,20 @@ const connectDB = async () => {
 
 const startServer = async () => {
   await connectDB();
+  await initializeDomainEvents();
   await initializeStationCache();
   const PORT = process.env.PORT || 5000;
+
+  if (process.env.STATION_CACHE_INVALIDATION_MODE === 'event') {
+    startCacheInvalidationWorker();
+  }
   if (process.env.NODE_ENV !== 'test' && process.env.ENABLE_RISK_MONITOR !== 'false') {
     startRiskMonitor();
   }
   return app.listen(PORT, () =>
-    console.log(`[Server] Running on port ${PORT} (station cache: ${getStationCacheProvider()})`)
+    console.log(
+      `[Server] Running on port ${PORT} (station cache: ${getStationCacheProvider()}, events: ${getDomainEventProvider()})`
+    )
   );
 };
 
@@ -89,4 +101,13 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, createApp, connectDB, startServer, stopRiskMonitor, closeStationCache };
+module.exports = {
+  app,
+  createApp,
+  connectDB,
+  startServer,
+  stopRiskMonitor,
+  closeStationCache,
+  closeDomainEvents,
+  stopCacheInvalidationWorker,
+};

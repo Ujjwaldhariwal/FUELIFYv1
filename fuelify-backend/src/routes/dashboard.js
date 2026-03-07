@@ -5,7 +5,7 @@ const router = express.Router();
 const Station = require('../models/Station');
 const PriceHistory = require('../models/PriceHistory');
 const { requireAuth } = require('../middleware/auth');
-const { invalidateStationCache } = require('../services/stationCache');
+const { scheduleStationCacheInvalidation } = require('../services/stationCache');
 
 // All routes in this file require JWT auth
 router.use(requireAuth);
@@ -43,7 +43,10 @@ router.patch('/station', async (req, res, next) => {
     );
 
     if (!station) return res.status(404).json({ error: 'Station not found' });
-    await invalidateStationCache();
+    await scheduleStationCacheInvalidation({
+      reason: 'STATION_PROFILE_UPDATED',
+      stationId: req.owner.stationId.toString(),
+    });
     return res.json({ station });
   } catch (err) {
     return next(err);
@@ -108,7 +111,10 @@ router.post('/prices', async (req, res, next) => {
       confidenceScore: 1.0,
     });
 
-    await invalidateStationCache();
+    await scheduleStationCacheInvalidation({
+      reason: 'STATION_PRICES_UPDATED',
+      stationId: req.owner.stationId.toString(),
+    });
     return res.json({ success: true, prices: station.prices });
   } catch (err) {
     return next(err);

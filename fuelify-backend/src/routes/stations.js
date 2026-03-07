@@ -7,7 +7,11 @@ const UserReport = require('../models/UserReport');
 const PriceHistory = require('../models/PriceHistory');
 const { reportLimiter } = require('../middleware/rateLimit');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
-const { getCachedStations, setCachedStations } = require('../services/stationCache');
+const {
+  getCachedStations,
+  setCachedStations,
+  scheduleStationCacheInvalidation,
+} = require('../services/stationCache');
 const { scoreStationRisk } = require('../services/stationRiskScorer');
 
 const VALID_FUELS = ['regular', 'midgrade', 'premium', 'diesel', 'e85'];
@@ -246,6 +250,10 @@ router.post('/:stationId/report', validateObjectIdParam('stationId'), reportLimi
       stationDoc.riskEvaluatedAt = risk.riskEvaluatedAt;
       stationDoc.blockedAt = risk.blockedAt;
       await stationDoc.save();
+      await scheduleStationCacheInvalidation({
+        reason: 'STATION_REPORTED',
+        stationId: stationDoc._id.toString(),
+      });
     }
 
     return res.status(201).json({ success: true, reportId: report._id });

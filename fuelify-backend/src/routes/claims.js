@@ -7,7 +7,7 @@ const { claimLimiter } = require('../middleware/rateLimit');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
 const { verifyClaim } = require('../services/claimVerification');
 const { scoreStationRisk } = require('../services/stationRiskScorer');
-const { invalidateStationCache } = require('../services/stationCache');
+const { scheduleStationCacheInvalidation } = require('../services/stationCache');
 
 const router = express.Router();
 
@@ -68,7 +68,7 @@ router.post('/', claimLimiter, async (req, res, next) => {
     });
 
     await applyStationRiskUpdate(stationId);
-    await invalidateStationCache();
+    await scheduleStationCacheInvalidation({ reason: 'CLAIM_CREATED', stationId });
 
     return res.status(201).json({
       claimId: claim._id,
@@ -204,7 +204,7 @@ router.post('/:id/retry', validateObjectIdParam('id'), claimLimiter, async (req,
     await claim.save();
 
     await applyStationRiskUpdate(claim.stationId);
-    await invalidateStationCache();
+    await scheduleStationCacheInvalidation({ reason: 'CLAIM_RETRIED', stationId: claim.stationId.toString() });
 
     return res.json({
       status: claim.status,

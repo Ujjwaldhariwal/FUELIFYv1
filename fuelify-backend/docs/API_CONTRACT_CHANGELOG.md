@@ -32,3 +32,7 @@
   - `STATION_CACHE_MODE=memory|redis` (default `memory`)
   - `REDIS_URL` required when `STATION_CACHE_MODE=redis`
   - If Redis is unavailable, service falls back to memory cache without failing requests.
+- Added async invalidation boundary for station cache:
+  - `STATION_CACHE_INVALIDATION_MODE=direct|event` (default `direct`)
+  - `event` mode publishes `station.cache.invalidate` domain events consumed by cache invalidation worker.
+  - If event publish fails, backend falls back to direct invalidation to preserve consistency.

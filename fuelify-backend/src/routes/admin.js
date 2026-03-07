@@ -6,6 +6,7 @@ const Station = require('../models/Station');
 const mongoose = require('mongoose');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
+const { scheduleStationCacheInvalidation } = require('../services/stationCache');
 
 // All admin routes require auth + ADMIN role
 router.use(requireAuth);
@@ -62,6 +63,10 @@ router.patch('/stations/:id/verify', validateObjectIdParam('id'), async (req, re
     }
     const station = await Station.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!station) return res.status(404).json({ error: 'Station not found' });
+    await scheduleStationCacheInvalidation({
+      reason: 'ADMIN_STATION_STATUS_UPDATED',
+      stationId: station._id.toString(),
+    });
 
     return res.json({ station });
   } catch (err) {

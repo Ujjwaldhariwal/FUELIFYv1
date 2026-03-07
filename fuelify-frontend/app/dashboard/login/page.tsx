@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, Fuel, Lock, UserRound } from 'lucide-react';
-import { login } from '@/services/api';
+import { formatApiErrorForToast, login } from '@/services/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
@@ -35,8 +35,8 @@ export default function LoginPage() {
       localStorage.setItem('fuelify_owner', JSON.stringify(response.owner));
       show('Signed in successfully.', 'success');
       router.push('/dashboard');
-    } catch (error: any) {
-      show(error.response?.data?.error || 'Unable to sign in.', 'error');
+    } catch (error) {
+      show(formatApiErrorForToast(error), 'error');
     } finally {
       setLoading(false);
     }

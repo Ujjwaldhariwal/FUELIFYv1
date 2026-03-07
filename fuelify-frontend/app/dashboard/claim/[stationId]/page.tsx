@@ -11,8 +11,15 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { CheckCircle } from 'lucide-react';
-import { inititateClaim, resendOtp, verifyClaim } from '@/services/api';
-import type { Station } from '@/types';
+import {
+  fetchStationById,
+  formatApiErrorForToast,
+  getStationClaimSummary,
+  initiateClaim,
+  resendOtp,
+  verifyClaim,
+} from '@/services/api';
+import type { Station, StationClaimSummary } from '@/types';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -20,8 +27,6 @@ import { OtpInput } from '@/components/ui/OtpInput';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useToast } from '@/components/ui/Toast';
 
-// NOTE: This page fetches station by _id.
-// Add an alternate GET /api/stations/id/:id route in stations.js that looks up by _id.
 type Step = 1 | 2 | 3 | 4 | 5;
 
 export default function ClaimFlowPage() {
@@ -31,6 +36,7 @@ export default function ClaimFlowPage() {
 
   const [step, setStep] = useState<Step>(1);
   const [station, setStation] = useState<Station | null>(null);
+  const [claimSummary, setClaimSummary] = useState<StationClaimSummary | null>(null);
   const [loadingStation, setLoadingStation] = useState(true);
   const [phone, setPhone] = useState('');
   const [otpError, setOtpError] = useState('');
@@ -51,11 +57,22 @@ export default function ClaimFlowPage() {
   }>();
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/stations/id/${stationId}`)
-      .then((response) => response.json())
-      .then((data) => setStation(data.station))
-      .catch(() => show('Station not found', 'error'))
-      .finally(() => setLoadingStation(false));
+    const load = async () => {
+      try {
+        const [stationRes, summaryRes] = await Promise.all([
+          fetchStationById(stationId),
+          getStationClaimSummary(stationId).catch(() => null),
+        ]);
+        setStation(stationRes.station);
+        setClaimSummary(summaryRes);
+      } catch (error) {
+        show(formatApiErrorForToast(error), 'error');
+      } finally {
+        setLoadingStation(false);
+      }
+    };
+
+    load();
   }, [show, stationId]);
 
   useEffect(() => {
@@ -67,11 +84,11 @@ export default function ClaimFlowPage() {
   const sendOtp = async () => {
     setSubmitting(true);
     try {
-      await inititateClaim(stationId, phone);
+      await initiateClaim(stationId, phone);
       setStep(3);
       setResendCountdown(60);
-    } catch (err: any) {
-      show(err.response?.data?.error || 'Failed to send OTP', 'error');
+    } catch (error) {
+      show(formatApiErrorForToast(error), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -84,8 +101,8 @@ export default function ClaimFlowPage() {
       await resendOtp(phone, stationId);
       setResendCountdown(60);
       show('New OTP sent!', 'success');
-    } catch (err: any) {
-      show(err.response?.data?.error || 'Failed to resend OTP', 'error');
+    } catch (error) {
+      show(formatApiErrorForToast(error), 'error');
     }
   };
 
@@ -101,12 +118,17 @@ export default function ClaimFlowPage() {
       localStorage.setItem('fuelify_token', res.token);
       localStorage.setItem('fuelify_owner', JSON.stringify(res.owner));
       setStep(5);
-    } catch (err: any) {
-      show(err.response?.data?.error || 'Verification failed', 'error');
+    } catch (error) {
+      show(formatApiErrorForToast(error), 'error');
     } finally {
       setSubmitting(false);
     }
   };
+
+  const stationBlocked = claimSummary?.risk.status === 'blocked';
+  const stationAlreadyClaimed = station?.status !== 'UNCLAIMED';
+  const cooldownUntil = claimSummary?.claim?.retryAt ? new Date(claimSummary.claim.retryAt) : null;
+  const inCooldown = Boolean(cooldownUntil && cooldownUntil > new Date());
 
   if (loadingStation) {
     return (
@@ -144,6 +166,26 @@ export default function ClaimFlowPage() {
               <h1 className="mb-1 text-lg font-bold">Is this your station?</h1>
               <p className="mb-5 text-sm text-[var(--text-secondary)]">We found this listing in our database.</p>
 
+              {stationBlocked && (
+                <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  Claims are temporarily blocked for this station due to verification risk checks.
+                </div>
+              )}
+
+              {claimSummary?.claim && (
+                <div className="mb-4 rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                  Latest review: <strong className="text-[var(--text-primary)]">{claimSummary.claim.status}</strong>
+                  {claimSummary.claim.reasonCode ? ` - ${claimSummary.claim.reasonCode}` : ''}
+                  {inCooldown && cooldownUntil ? ` - retry after ${cooldownUntil.toLocaleString()}` : ''}
+                </div>
+              )}
+
+              {stationAlreadyClaimed && (
+                <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                  This station is already claimed. Sign in if you are the owner.
+                </div>
+              )}
+
               <div className="mb-6 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
                 <BrandLogo brand={station.brand} size={48} />
                 <div>
@@ -155,8 +197,8 @@ export default function ClaimFlowPage() {
               </div>
 
               <div className="flex gap-2">
-                <Button fullWidth onClick={() => setStep(2)}>
-                  Yes, this is my station →
+                <Button fullWidth onClick={() => setStep(2)} disabled={stationBlocked || stationAlreadyClaimed}>
+                  Yes, this is my station &rarr;
                 </Button>
                 <Button fullWidth variant="secondary" onClick={() => router.push('/claim')}>
                   No, search again
@@ -217,7 +259,7 @@ export default function ClaimFlowPage() {
               </div>
 
               <Button fullWidth className="mt-4" onClick={() => setStep(4)} disabled={otp.length < 6}>
-                Continue →
+                Continue &rarr;
               </Button>
             </div>
           )}
@@ -266,7 +308,7 @@ export default function ClaimFlowPage() {
               </div>
 
               <Button type="submit" fullWidth loading={submitting} className="mt-5">
-                Verify & Create Account
+                Verify and Create Account
               </Button>
             </form>
           )}
@@ -279,7 +321,7 @@ export default function ClaimFlowPage() {
                 {station.name} is now live on Fuelify with an Owner Verified badge.
               </p>
               <Button fullWidth onClick={() => router.push('/dashboard')}>
-                Go to Dashboard →
+                Go to Dashboard &rarr;
               </Button>
             </div>
           )}

@@ -88,6 +88,16 @@ const makeVerifiedOwner = async ({ stationId, email, phone, password = 'DevPass1
   });
 };
 
+const loginAsOwner = async ({ identifier, password = 'DevPass123!' }) => {
+  const loginRes = await request(app).post('/api/auth/login').send({
+    identifier,
+    password,
+  });
+  expect(loginRes.status).toBe(200);
+  expect(loginRes.body.token).toBeTruthy();
+  return loginRes.body.token;
+};
+
 beforeAll(async () => {
   const externalUri = process.env.TEST_MONGODB_URI || process.env.MONGODB_URI;
   if (externalUri) {
@@ -334,30 +344,49 @@ describe('Fuelify backend integration', () => {
   });
 
   test('claim lifecycle supports submit, status, and retry', async () => {
+    const owner = await Owner.create({
+      stationId: new mongoose.Types.ObjectId(),
+      name: 'Claim Owner',
+      email: 'claim.owner@fuelify.local',
+      phone: '+15558889999',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+
     const station = await makeStation({
       name: 'Claim Station',
       slug: 'claim-station-columbus-oh',
       regular: null,
-      status: 'UNCLAIMED',
+      status: 'CLAIMED',
+      claimedBy: owner._id,
     });
+    await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
 
-    const createRes = await request(app).post('/api/claims').send({
-      stationId: station._id.toString(),
-      evidence: {
-        businessName: 'Test Fuel LLC',
-        businessRegistrationId: 'OH-123456',
-        claimantName: 'Jane Owner',
-        claimantEmail: 'owner@testfuel.example',
-        claimantPhone: '+15558889999',
-        website: 'https://testfuel.example',
-      },
-    });
+    const token = await loginAsOwner({ identifier: owner.email });
+
+    const createRes = await request(app)
+      .post('/api/claims')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        stationId: station._id.toString(),
+        evidence: {
+          businessName: 'Test Fuel LLC',
+          businessRegistrationId: 'OH-123456',
+          claimantName: 'Jane Owner',
+          claimantEmail: 'owner@testfuel.example',
+          claimantPhone: '+15558889999',
+          website: 'https://testfuel.example',
+        },
+      });
 
     expect(createRes.status).toBe(201);
     expect(createRes.body.claimId).toBeTruthy();
     expect(createRes.body.status).toBeTruthy();
 
-    const statusRes = await request(app).get(`/api/claims/${createRes.body.claimId}/status`);
+    const statusRes = await request(app)
+      .get(`/api/claims/${createRes.body.claimId}/status`)
+      .set('Authorization', `Bearer ${token}`);
     expect(statusRes.status).toBe(200);
     expect(statusRes.body.status).toBeTruthy();
     expect(statusRes.body.requestId).toBeTruthy();
@@ -373,14 +402,40 @@ describe('Fuelify backend integration', () => {
 
     const storedClaim = await Claim.findById(createRes.body.claimId).lean();
     if (storedClaim.status === 'REJECTED' || storedClaim.status === 'BLOCKED') {
-      const retryRes = await request(app).post(`/api/claims/${storedClaim._id}/retry`).send({
-        evidence: {
-          website: 'https://testfuel.example',
-        },
-      });
+      const retryRes = await request(app)
+        .post(`/api/claims/${storedClaim._id}/retry`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          evidence: {
+            website: 'https://testfuel.example',
+          },
+        });
 
       expect([200, 429]).toContain(retryRes.status);
     }
+  });
+
+  test('POST /api/claims requires authenticated owner token', async () => {
+    const station = await makeStation({
+      name: 'Unowned Claim Station',
+      slug: 'unowned-claim-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    const res = await request(app).post('/api/claims').send({
+      stationId: station._id.toString(),
+      evidence: {
+        businessName: 'Unowned Fuel LLC',
+        businessRegistrationId: 'OH-654321',
+        claimantName: 'Unauthorized User',
+        claimantEmail: 'unauthorized@example.com',
+        claimantPhone: '+15550000000',
+      },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/no token/i);
   });
 
   test('approved claim promotes claimed station to VERIFIED', async () => {
@@ -404,17 +459,22 @@ describe('Fuelify backend integration', () => {
 
     await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
 
-    const createRes = await request(app).post('/api/claims').send({
-      stationId: station._id.toString(),
-      evidence: {
-        businessName: 'Authority Station',
-        businessRegistrationId: 'OH-998877',
-        claimantName: 'Authority Owner',
-        claimantEmail: 'owner@authorityfuel.com',
-        claimantPhone: '+15557776666',
-        website: 'https://authorityfuel.com',
-      },
-    });
+    const token = await loginAsOwner({ identifier: owner.email });
+
+    const createRes = await request(app)
+      .post('/api/claims')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        stationId: station._id.toString(),
+        evidence: {
+          businessName: 'Authority Station',
+          businessRegistrationId: 'OH-998877',
+          claimantName: 'Authority Owner',
+          claimantEmail: 'owner@authorityfuel.com',
+          claimantPhone: '+15557776666',
+          website: 'https://authorityfuel.com',
+        },
+      });
 
     expect(createRes.status).toBe(201);
     expect(['APPROVED', 'REJECTED', 'BLOCKED']).toContain(createRes.body.status);

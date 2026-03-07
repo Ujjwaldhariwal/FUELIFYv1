@@ -5,6 +5,7 @@ const Claim = require('../models/Claim');
 const Station = require('../models/Station');
 const { claimLimiter } = require('../middleware/rateLimit');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
+const { requireAuth } = require('../middleware/auth');
 const { verifyClaim } = require('../services/claimVerification');
 const { scoreStationRisk } = require('../services/stationRiskScorer');
 const { scheduleStationCacheInvalidation } = require('../services/stationCache');
@@ -62,8 +63,11 @@ const applyStationRiskUpdate = async (stationId) => {
   await station.save();
 };
 
+const canAccessClaim = (claim, owner) =>
+  owner?.role === 'ADMIN' || (claim.ownerId && claim.ownerId.toString() === owner?._id?.toString());
+
 // POST /api/claims
-router.post('/', claimLimiter, async (req, res, next) => {
+router.post('/', requireAuth, claimLimiter, async (req, res, next) => {
   try {
     const { stationId, evidence } = req.body;
     const requestId = req.requestId;
@@ -76,15 +80,53 @@ router.post('/', claimLimiter, async (req, res, next) => {
       return res.status(400).json({ code: 'INVALID_EVIDENCE', message: validationError, requestId });
     }
 
-    const stationRecord = await Station.findById(stationId).select('_id claimedBy');
+    const stationRecord = await Station.findById(stationId).select('_id claimedBy status');
     if (!stationRecord) {
       return res.status(404).json({ code: 'STATION_NOT_FOUND', message: 'Station not found', requestId });
+    }
+    if (!stationRecord.claimedBy) {
+      return res.status(409).json({
+        code: 'STATION_NOT_CLAIMED',
+        message: 'Station must be claimed before verification review',
+        requestId,
+      });
+    }
+    if (stationRecord.claimedBy.toString() !== req.owner._id.toString()) {
+      return res.status(403).json({
+        code: 'FORBIDDEN_STATION_ACCESS',
+        message: 'You can only submit verification for your claimed station',
+        requestId,
+      });
+    }
+    if (stationRecord.status !== 'CLAIMED' && stationRecord.status !== 'VERIFIED') {
+      return res.status(409).json({
+        code: 'INVALID_STATION_STATUS',
+        message: 'Station is not in a verification-eligible state',
+        requestId,
+      });
+    }
+
+    const pendingClaim = await Claim.findOne({
+      stationId,
+      ownerId: req.owner._id,
+      status: 'PENDING',
+    })
+      .sort({ createdAt: -1 })
+      .select('_id retryAt');
+    if (pendingClaim) {
+      return res.status(409).json({
+        code: 'CLAIM_ALREADY_PENDING',
+        message: 'A verification request is already in progress',
+        claimId: pendingClaim._id,
+        retryAt: pendingClaim.retryAt || null,
+        requestId,
+      });
     }
 
     const claimResult = await verifyClaim({ stationId, evidence });
     const claim = await Claim.create({
       stationId,
-      ownerId: stationRecord.claimedBy || null,
+      ownerId: req.owner._id,
       evidence: { ...evidence, domainVerified: claimResult.domainVerified },
       status: claimResult.status,
       reasonCode: claimResult.reasonCode,
@@ -115,12 +157,15 @@ router.post('/', claimLimiter, async (req, res, next) => {
 });
 
 // GET /api/claims/:id/status
-router.get('/:id/status', validateObjectIdParam('id'), async (req, res, next) => {
+router.get('/:id/status', requireAuth, validateObjectIdParam('id'), async (req, res, next) => {
   try {
     const requestId = req.requestId;
-    const claim = await Claim.findById(req.params.id).lean();
+    const claim = await Claim.findById(req.params.id).select('ownerId status reasonCode message retryAt slaEta').lean();
     if (!claim) {
       return res.status(404).json({ code: 'CLAIM_NOT_FOUND', message: 'Claim not found', requestId });
+    }
+    if (!canAccessClaim(claim, req.owner)) {
+      return res.status(403).json({ code: 'FORBIDDEN_CLAIM_ACCESS', message: 'Claim access denied', requestId });
     }
     return res.json({
       status: claim.status,
@@ -191,12 +236,15 @@ router.get('/station/:stationId/summary', validateObjectIdParam('stationId'), as
 });
 
 // POST /api/claims/:id/retry
-router.post('/:id/retry', validateObjectIdParam('id'), claimLimiter, async (req, res, next) => {
+router.post('/:id/retry', requireAuth, validateObjectIdParam('id'), claimLimiter, async (req, res, next) => {
   try {
     const requestId = req.requestId;
     const claim = await Claim.findById(req.params.id);
     if (!claim) {
       return res.status(404).json({ code: 'CLAIM_NOT_FOUND', message: 'Claim not found', requestId });
+    }
+    if (!canAccessClaim(claim, req.owner)) {
+      return res.status(403).json({ code: 'FORBIDDEN_CLAIM_ACCESS', message: 'Claim access denied', requestId });
     }
 
     if (claim.status !== 'REJECTED' && claim.status !== 'BLOCKED') {

@@ -20,6 +20,10 @@
 - Validation and server errors now include `requestId` in JSON body for traceability.
 - `POST /api/stations/:stationId/report` malformed ObjectId now returns:
   - `400 { error, code: "INVALID_OBJECT_ID", requestId }`
+- `GET /api/stations` now supports viewport mode via:
+  - `bbox=west,south,east,north`
+  - optional `zoom`
+  - response includes `queryMode: "bbox"` when bbox is used.
 
 ### Operational behavior
 - Added background risk rescoring monitor (enabled by default outside tests):

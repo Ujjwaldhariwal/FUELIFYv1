@@ -75,9 +75,25 @@ export const fetchNearbyStations = async (
   lng: number,
   radius = 25,
   fuel = 'regular',
-  limit = 20
+  limit = 20,
+  signal?: AbortSignal
 ): Promise<StationsResponse> => {
-  const { data } = await api.get('/stations', { params: { lat, lng, radius, fuel, limit } });
+  const { data } = await api.get('/stations', { params: { lat, lng, radius, fuel, limit }, signal });
+  return data;
+};
+
+export const fetchStationsByViewport = async (
+  bbox: { west: number; south: number; east: number; north: number },
+  fuel = 'regular',
+  limit = 300,
+  zoom?: number,
+  signal?: AbortSignal
+): Promise<StationsResponse & { queryMode?: string }> => {
+  const bboxParam = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+  const { data } = await api.get('/stations', {
+    params: { bbox: bboxParam, fuel, limit, zoom },
+    signal,
+  });
   return data;
 };
 

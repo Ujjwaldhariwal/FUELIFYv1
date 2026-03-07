@@ -6,6 +6,9 @@ const Station = require('../models/Station');
 const UserReport = require('../models/UserReport');
 const PriceHistory = require('../models/PriceHistory');
 const { reportLimiter } = require('../middleware/rateLimit');
+const { validateObjectIdParam } = require('../middleware/validateObjectId');
+const { getCachedStations, setCachedStations } = require('../services/stationCache');
+const { scoreStationRisk } = require('../services/stationRiskScorer');
 
 const VALID_FUELS = ['regular', 'midgrade', 'premium', 'diesel', 'e85'];
 const DEFAULT_PAGE = 1;
@@ -66,6 +69,18 @@ router.get('/', async (req, res, next) => {
       services: 1,
     };
     const hasLocation = lat !== null && lng !== null;
+    const cacheParams = {
+      lat,
+      lng,
+      radiusKm,
+      fuel,
+      page,
+      limit,
+      state: hasLocation ? null : typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH',
+    };
+    const cached = getCachedStations(cacheParams);
+    if (cached) return res.json(cached);
+
     let stations = [];
     let total = 0;
 
@@ -130,13 +145,15 @@ router.get('/', async (req, res, next) => {
       Station.updateMany({ _id: { $in: topIds } }, { $inc: { searchAppearances: 1 } }).exec();
     }
 
-    return res.json({
+    const payload = {
       stations: stations.map(mapStationPayload),
       total,
       page,
       limit,
       pages: Math.ceil(total / limit) || 1,
-    });
+    };
+    setCachedStations(cacheParams, payload);
+    return res.json(payload);
   } catch (err) {
     return next(err);
   }
@@ -169,7 +186,7 @@ router.get('/search', async (req, res, next) => {
 
 // Lookup station by MongoDB ObjectId (used by claim flow)
 // NOTE: this route must be above /:slug to avoid route collisions.
-router.get('/id/:id', async (req, res, next) => {
+router.get('/id/:id', validateObjectIdParam('id'), async (req, res, next) => {
   try {
     const station = await Station.findById(req.params.id).lean();
     if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -199,7 +216,7 @@ router.get('/:slug', async (req, res, next) => {
 });
 
 // POST /api/stations/:stationId/AddressSchema 
-router.post('/:stationId/report', reportLimiter, async (req, res, next) => {
+router.post('/:stationId/report', validateObjectIdParam('stationId'), reportLimiter, async (req, res, next) => {
   try {
     const { type, data } = req.body;
     const validTypes = ['PRICE_UPDATE', 'WRONG_LOCATION', 'CLOSED', 'WRONG_INFO'];
@@ -208,12 +225,28 @@ router.post('/:stationId/report', reportLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid report type' });
     }
 
+    const station = await Station.findById(req.params.stationId).select('_id').lean();
+    if (!station) {
+      return res.status(404).json({ error: 'Station not found' });
+    }
+
     const report = await UserReport.create({
       stationId: req.params.stationId,
       type,
       data: data || {},
       reporterIp: req.ip,
     });
+
+    const stationDoc = await Station.findById(req.params.stationId);
+    if (stationDoc) {
+      const risk = await scoreStationRisk(stationDoc);
+      stationDoc.riskScore = risk.riskScore;
+      stationDoc.riskStatus = risk.riskStatus;
+      stationDoc.riskReasons = risk.riskReasons;
+      stationDoc.riskEvaluatedAt = risk.riskEvaluatedAt;
+      stationDoc.blockedAt = risk.blockedAt;
+      await stationDoc.save();
+    }
 
     return res.status(201).json({ success: true, reportId: report._id });
   } catch (err) {

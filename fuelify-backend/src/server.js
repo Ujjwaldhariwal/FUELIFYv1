@@ -11,6 +11,7 @@ const stationsRouter = require('./routes/stations');
 const authRouter = require('./routes/auth');
 const dashboardRouter = require('./routes/dashboard');
 const adminRouter = require('./routes/admin');
+const claimsRouter = require('./routes/claims');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimit');
 
@@ -43,6 +44,7 @@ const createApp = () => {
   app.use('/api/auth', authRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/claims', claimsRouter);
 
   // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));

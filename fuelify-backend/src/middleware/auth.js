@@ -1,6 +1,6 @@
 // fuelify-backend/src/middleware/auth.js
-const jwt = require('jsonwebtoken');
 const Owner = require('../models/Owner');
+const { verifyAccessToken } = require('../services/tokenVerifier');
 
 // Middleware: require valid JWT (any verified owner)
 const requireAuth = async (req, res, next) => {
@@ -12,8 +12,11 @@ const requireAuth = async (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const owner = await Owner.findById(decoded.id).select('-passwordHash -verificationOtp');
+    const verified = verifyAccessToken(token);
+    const ownerFilter = verified.ownerId
+      ? { _id: verified.ownerId }
+      : { cognitoSub: verified.cognitoSub };
+    const owner = await Owner.findOne(ownerFilter).select('-passwordHash -verificationOtp');
 
     if (!owner) return res.status(401).json({ error: 'Owner not found' });
     if (!owner.isVerified) return res.status(403).json({ error: 'Account not verified' });
@@ -25,14 +28,8 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
-// Middleware: require ADMIN role (checks role field AND admin secret header as fallback)
+// Middleware: require ADMIN role
 const requireAdmin = async (req, res, next) => {
-  const adminKey = req.headers['x-admin-key'];
-  if (adminKey && adminKey === process.env.ADMIN_SECRET_KEY) {
-    req.isAdmin = true;
-    return next();
-  }
-
   if (!req.owner || req.owner.role !== 'ADMIN') {
     return res.status(403).json({ error: 'Admin access required' });
   }

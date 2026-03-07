@@ -13,6 +13,7 @@ const { app } = require('../../src/server');
 const Station = require('../../src/models/Station');
 const Owner = require('../../src/models/Owner');
 const PriceHistory = require('../../src/models/PriceHistory');
+const Claim = require('../../src/models/Claim');
 
 let mongoServer;
 const TEST_DB_NAME = 'fuelify_integration_tests';
@@ -26,6 +27,7 @@ const makeStation = async ({
   lat = 39.9612,
   lng = -82.9988,
   city = 'Columbus',
+  status = 'VERIFIED',
 }) => {
   return Station.create({
     slug,
@@ -42,7 +44,7 @@ const makeStation = async ({
     phone: '+1-555-000-1111',
     website: 'https://fuelify.example',
     hours: 'Mon-Sun 6am-11pm',
-    status: 'VERIFIED',
+    status,
     prices: {
       regular,
       midgrade: null,
@@ -102,7 +104,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([Station.deleteMany({}), Owner.deleteMany({}), PriceHistory.deleteMany({})]);
+  await Promise.all([Station.deleteMany({}), Owner.deleteMany({}), PriceHistory.deleteMany({}), Claim.deleteMany({})]);
 });
 
 describe('Fuelify backend integration', () => {
@@ -213,5 +215,56 @@ describe('Fuelify backend integration', () => {
     const historyDoc = await PriceHistory.findOne({ stationId: station._id }).lean();
     expect(historyDoc.submittedBy.toString()).toBe(owner._id.toString());
     expect(historyDoc.prices.regular).toBeCloseTo(3.111, 3);
+  });
+
+  test('POST /api/stations/:stationId/report rejects malformed stationId', async () => {
+    const res = await request(app).post('/api/stations/not-an-objectid/report').send({
+      type: 'WRONG_INFO',
+      data: { message: 'bad' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid stationId/);
+  });
+
+  test('claim lifecycle supports submit, status, and retry', async () => {
+    const station = await makeStation({
+      name: 'Claim Station',
+      slug: 'claim-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    const createRes = await request(app).post('/api/claims').send({
+      stationId: station._id.toString(),
+      evidence: {
+        businessName: 'Test Fuel LLC',
+        businessRegistrationId: 'OH-123456',
+        claimantName: 'Jane Owner',
+        claimantEmail: 'owner@testfuel.example',
+        claimantPhone: '+15558889999',
+        website: 'https://testfuel.example',
+      },
+    });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.claimId).toBeTruthy();
+    expect(createRes.body.status).toBeTruthy();
+
+    const statusRes = await request(app).get(`/api/claims/${createRes.body.claimId}/status`);
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body.status).toBeTruthy();
+    expect(statusRes.body.requestId).toBeTruthy();
+
+    const storedClaim = await Claim.findById(createRes.body.claimId).lean();
+    if (storedClaim.status === 'REJECTED' || storedClaim.status === 'BLOCKED') {
+      const retryRes = await request(app).post(`/api/claims/${storedClaim._id}/retry`).send({
+        evidence: {
+          website: 'https://testfuel.example',
+        },
+      });
+
+      expect([200, 429]).toContain(retryRes.status);
+    }
   });
 });

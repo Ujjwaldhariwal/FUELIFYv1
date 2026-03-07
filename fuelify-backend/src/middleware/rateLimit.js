@@ -23,4 +23,27 @@ const reportLimiter = rateLimit({
   message: { error: 'Too many reports from this IP.' },
 });
 
-module.exports = { otpLimiter, apiLimiter, reportLimiter };
+// Login endpoint: 10 attempts per IP per 15 minutes
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts. Try again later.' },
+});
+
+// OTP verify endpoint: 8 attempts per phone/IP per 15 minutes
+const otpVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  keyGenerator: (req) => req.body.phone || req.ip,
+  message: { error: 'Too many OTP verification attempts. Please wait 15 minutes.' },
+});
+
+// Claim submission/retry endpoints: 6 attempts per identity per hour
+const claimLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 6,
+  keyGenerator: (req) => req.body?.evidence?.claimantPhone || req.ip,
+  message: { error: 'Too many claim attempts. Please try again later.' },
+});
+
+module.exports = { otpLimiter, apiLimiter, reportLimiter, loginLimiter, otpVerifyLimiter, claimLimiter };

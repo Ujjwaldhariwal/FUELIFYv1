@@ -34,6 +34,10 @@
   - `APPROVED` => station promoted to `VERIFIED`
   - `REJECTED` / `BLOCKED` / low confidence => station remains `CLAIMED` (if owner attached)
 - Dashboard profile/price updates require station status `VERIFIED`.
+- Claim endpoints now enforce owner authorization:
+  - `POST /api/claims` requires authenticated owner token and ownership of the claimed station.
+  - `GET /api/claims/:id/status` requires authenticated owner token tied to the claim (`ADMIN` can access all).
+  - `POST /api/claims/:id/retry` requires authenticated owner token tied to the claim (`ADMIN` can access all).
 
 ### Operational behavior
 - Added background risk rescoring monitor (enabled by default outside tests):

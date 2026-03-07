@@ -36,3 +36,8 @@
   - `STATION_CACHE_INVALIDATION_MODE=direct|event` (default `direct`)
   - `event` mode publishes `station.cache.invalidate` domain events consumed by cache invalidation worker.
   - If event publish fails, backend falls back to direct invalidation to preserve consistency.
+- Added domain events provider abstraction:
+  - `DOMAIN_EVENTS_PROVIDER=memory|redis` (default `memory`)
+  - `DOMAIN_EVENTS_CHANNEL` (default `fuelify:domain-events`)
+  - `REDIS_URL` used when `DOMAIN_EVENTS_PROVIDER=redis`
+  - On Redis failure, domain events degrade to in-process memory events automatically.

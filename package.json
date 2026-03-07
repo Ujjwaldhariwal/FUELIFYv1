@@ -1,0 +1,17 @@
+{
+  "name": "fuelify-workspace",
+  "private": true,
+  "scripts": {
+    "install:backend": "npm --prefix fuelify-backend install",
+    "install:frontend": "npm --prefix fuelify-frontend install",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "dev:backend": "npm --prefix fuelify-backend run dev",
+    "dev:frontend": "npm --prefix fuelify-frontend run dev",
+    "build:frontend": "npm --prefix fuelify-frontend run build",
+    "test:backend:integration": "npm --prefix fuelify-backend run test:integration",
+    "check:prereqs": "powershell -ExecutionPolicy Bypass -File ./scripts/check-prereqs.ps1",
+    "smoke:api": "powershell -ExecutionPolicy Bypass -File ./scripts/smoke-api.ps1",
+    "seed:fixture": "node ./scripts/seed-dev-fixture.js",
+    "smoke:e2e": "powershell -ExecutionPolicy Bypass -File ./scripts/smoke-e2e.ps1"
+  }
+}

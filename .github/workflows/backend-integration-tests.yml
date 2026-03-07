@@ -1,0 +1,41 @@
+name: Backend Integration Tests
+
+on:
+  push:
+    paths:
+      - 'fuelify-backend/**'
+      - '.github/workflows/backend-integration-tests.yml'
+  pull_request:
+    paths:
+      - 'fuelify-backend/**'
+      - '.github/workflows/backend-integration-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci_jwt_secret_please_override_in_real_env
+      ADMIN_SECRET_KEY: ci_admin_secret_please_override_in_real_env
+      TEST_MONGODB_URI: ${{ secrets.TEST_MONGODB_URI }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fuelify-backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: fuelify-backend
+
+      - name: Run backend integration tests
+        run: npm run test:integration
+        working-directory: fuelify-backend
+

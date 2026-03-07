@@ -1,0 +1,278 @@
+/* fuelify-frontend/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design Tokens ─── */
+:root {
+  --bg-primary:    #F5F7FF;
+  --bg-surface:    #FFFFFF;
+  --bg-card:       #FFFFFF;
+  --bg-elevated:   #ECEFFE;
+  --bg-glass:      rgba(255, 255, 255, 0.80);
+
+  --border:        rgba(79, 70, 229, 0.10);
+  --border-strong: rgba(79, 70, 229, 0.24);
+
+  --text-primary:   #0B0F1A;
+  --text-secondary: #4A5470;
+  --text-muted:     #8896AE;
+
+  --accent-primary: #4F46E5;
+  --accent-violet:  #7C3AED;
+  --accent-green:   #059669;
+  --accent-amber:   #D97706;
+  --accent-red:     #DC2626;
+
+  /* Legacy alias */
+  --accent-blue: #4F46E5;
+
+  /* ── Overlay & Glass ──────────────────────── */
+  --bg-overlay:       rgba(0, 0, 0, 0.5);
+  --bg-glass-strong:  rgba(255, 255, 255, 0.92);
+
+  /* ── Semantic Status ─────────────────────── */
+  --color-success:       #059669;
+  --color-success-muted: rgba(5, 150, 105, 0.12);
+  --color-warning:       #D97706;
+  --color-warning-muted: rgba(217, 119, 6, 0.12);
+  --color-error:         #DC2626;
+  --color-error-muted:   rgba(220, 38, 38, 0.12);
+  --color-info:          #4F46E5;
+  --color-info-muted:    rgba(79, 70, 229, 0.12);
+
+  /* ── Shadows ─────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+
+  /* ── Interactive States ─────────────────── */
+  --hover-overlay: rgba(0, 0, 0, 0.04);
+  --press-overlay: rgba(0, 0, 0, 0.08);
+  --focus-ring:    rgba(79, 70, 229, 0.5);
+
+  /* ── Map Tokens ──────────────────────────── */
+  --marker-bg:              #FFFFFF;
+  --marker-border:          rgba(0, 0, 0, 0.12);
+  --marker-text:            #0B0F1A;
+  --marker-selected-bg:     #4F46E5;
+  --marker-selected-border: #818CF8;
+  --marker-selected-text:   #FFFFFF;
+}
+
+html.dark {
+  --bg-primary:    #070B14;
+  --bg-surface:    #0D1321;
+  --bg-card:       #111927;
+  --bg-elevated:   #182236;
+  --bg-glass:      rgba(13, 19, 33, 0.82);
+
+  --border:        rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(99, 102, 241, 0.30);
+
+  --text-primary:   #EDF2FF;
+  --text-secondary: #7B8FA8;
+  --text-muted:     #374357;
+
+  --accent-primary: #6366F1;
+  --accent-violet:  #8B5CF6;
+  --accent-green:   #10B981;
+  --accent-amber:   #F59E0B;
+  --accent-red:     #EF4444;
+
+  --accent-blue: #6366F1;
+
+  /* ── Overlay & Glass ──────────────────────── */
+  --bg-overlay:       rgba(0, 0, 0, 0.7);
+  --bg-glass-strong:  rgba(13, 19, 33, 0.95);
+
+  /* ── Semantic Status ─────────────────────── */
+  --color-success:       #10B981;
+  --color-success-muted: rgba(16, 185, 129, 0.12);
+  --color-warning:       #F59E0B;
+  --color-warning-muted: rgba(245, 158, 11, 0.12);
+  --color-error:         #EF4444;
+  --color-error-muted:   rgba(239, 68, 68, 0.12);
+  --color-info:          #6366F1;
+  --color-info-muted:    rgba(99, 102, 241, 0.12);
+
+  /* ── Shadows ─────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+
+  /* ── Interactive States ─────────────────── */
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+  --press-overlay: rgba(255, 255, 255, 0.08);
+  --focus-ring:    rgba(99, 102, 241, 0.5);
+
+  /* ── Map Tokens ──────────────────────────── */
+  --marker-bg:              #1E293B;
+  --marker-border:          rgba(255, 255, 255, 0.12);
+  --marker-text:            #FFFFFF;
+  --marker-selected-bg:     #4F46E5;
+  --marker-selected-border: #818CF8;
+  --marker-selected-text:   #FFFFFF;
+}
+
+/* ─── Base ─── */
+html, body {
+  min-height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+body {
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-feature-settings: 'rlig' 1, 'calt' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: clamp(14px, 2vw, 16px);
+}
+
+/* ─── Theme transition utility ─── */
+.theme-transition {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ─── Animations ─── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes marker-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(16,185,129,0.55); }
+  50%       { transform: scale(1.09); box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+}
+
+.fade-in-up { animation: fade-in-up 280ms cubic-bezier(0.22,1,0.36,1) both; }
+.fade-in    { animation: fade-in    200ms ease-out both; }
+
+/* ─── Skeleton shimmer ─── */
+.skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-surface)  48%,
+    var(--bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+
+/* ─── Map marker pulse ─── */
+.marker-pulse { animation: marker-pulse 1.5s ease-in-out infinite; }
+
+/* ─── Glass util ─── */
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ─── Gradient text ─── */
+.text-gradient {
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Scrollbar ─── */
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ─── MapLibre GL Overrides ─── */
+.maplibregl-map {
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+}
+
+.maplibregl-ctrl-group {
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  box-shadow: var(--shadow-md) !important;
+  background: transparent !important;
+}
+
+.maplibregl-ctrl-group button {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border) !important;
+  width: 36px !important;
+  height: 36px !important;
+}
+
+.maplibregl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: var(--bg-elevated) !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: none !important;
+}
+
+/* Style the zoom +/- icons */
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: var(--text-primary);
+}
+
+/* Attribution styling */
+.maplibregl-ctrl-attrib {
+  background: var(--bg-glass) !important;
+  backdrop-filter: blur(8px);
+  border-radius: 8px !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--text-muted) !important;
+}
+
+/* ─── Fuelify Map Markers ─── */
+.fuelify-marker {
+  cursor: pointer;
+  transition: transform 0.2s ease, filter 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.fuelify-marker:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+.fuelify-marker--selected {
+  transform: scale(1.15);
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5));
+  z-index: 10 !important;
+}
+
+.fuelify-marker--selected:hover {
+  transform: scale(1.18);
+}
+
+/* ─── Safe area ─── */
+.pt-safe { padding-top:    env(safe-area-inset-top); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pb-nav  { padding-bottom: calc(env(safe-area-inset-bottom) + 64px); }

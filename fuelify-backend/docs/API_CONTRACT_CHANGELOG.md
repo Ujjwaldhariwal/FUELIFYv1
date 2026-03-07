@@ -28,6 +28,13 @@
   - query: `bbox`, optional `zoom`, `fuel`, `limit`
   - response: `clusters[]`, `totalClusters`, `totalStations`, `stepDegrees`, `truncated`
 
+### Claim authority model update
+- `POST /api/auth/claim/verify` now marks station as `CLAIMED` (account ownership verified by OTP).
+- Final station verification state (`VERIFIED`) is now driven by `/api/claims` decision outcomes:
+  - `APPROVED` => station promoted to `VERIFIED`
+  - `REJECTED` / `BLOCKED` / low confidence => station remains `CLAIMED` (if owner attached)
+- Dashboard profile/price updates require station status `VERIFIED`.
+
 ### Operational behavior
 - Added background risk rescoring monitor (enabled by default outside tests):
   - Env controls:

@@ -28,6 +28,7 @@ const makeStation = async ({
   lng = -82.9988,
   city = 'Columbus',
   status = 'VERIFIED',
+  claimedBy = null,
 }) => {
   return Station.create({
     slug,
@@ -45,6 +46,8 @@ const makeStation = async ({
     website: 'https://fuelify.example',
     hours: 'Mon-Sun 6am-11pm',
     status,
+    claimedBy,
+    claimedAt: claimedBy ? new Date() : null,
     prices: {
       regular,
       midgrade: null,
@@ -287,6 +290,37 @@ describe('Fuelify backend integration', () => {
     expect(historyDoc.prices.regular).toBeCloseTo(3.111, 3);
   });
 
+  test('POST /api/dashboard/prices rejects updates for non-verified stations', async () => {
+    const station = await makeStation({
+      name: 'Claimed-Only Station',
+      slug: 'claimed-only-station-columbus-oh',
+      regular: 3.599,
+      status: 'CLAIMED',
+    });
+
+    await makeVerifiedOwner({
+      stationId: station._id,
+      email: 'owner.claimedonly@fuelify.local',
+      phone: '+15550004444',
+      password: 'DevPass123!',
+    });
+
+    const loginRes = await request(app).post('/api/auth/login').send({
+      identifier: 'owner.claimedonly@fuelify.local',
+      password: 'DevPass123!',
+    });
+    expect(loginRes.status).toBe(200);
+
+    const token = loginRes.body.token;
+    const updateRes = await request(app)
+      .post('/api/dashboard/prices')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ regular: 3.011 });
+
+    expect(updateRes.status).toBe(403);
+    expect(updateRes.body.error).toMatch(/enabled after verification approval/i);
+  });
+
   test('POST /api/stations/:stationId/report rejects malformed stationId', async () => {
     const res = await request(app).post('/api/stations/not-an-objectid/report').send({
       type: 'WRONG_INFO',
@@ -346,6 +380,50 @@ describe('Fuelify backend integration', () => {
       });
 
       expect([200, 429]).toContain(retryRes.status);
+    }
+  });
+
+  test('approved claim promotes claimed station to VERIFIED', async () => {
+    const owner = await Owner.create({
+      stationId: new mongoose.Types.ObjectId(),
+      name: 'Authority Owner',
+      email: 'authority.owner@fuelify.local',
+      phone: '+15557776666',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+
+    const station = await makeStation({
+      name: 'Authority Station',
+      slug: 'authority-station-columbus-oh',
+      regular: 3.455,
+      status: 'CLAIMED',
+      claimedBy: owner._id,
+    });
+
+    await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
+
+    const createRes = await request(app).post('/api/claims').send({
+      stationId: station._id.toString(),
+      evidence: {
+        businessName: 'Authority Station',
+        businessRegistrationId: 'OH-998877',
+        claimantName: 'Authority Owner',
+        claimantEmail: 'owner@authorityfuel.com',
+        claimantPhone: '+15557776666',
+        website: 'https://authorityfuel.com',
+      },
+    });
+
+    expect(createRes.status).toBe(201);
+    expect(['APPROVED', 'REJECTED', 'BLOCKED']).toContain(createRes.body.status);
+
+    const stationAfter = await Station.findById(station._id).lean();
+    if (createRes.body.status === 'APPROVED') {
+      expect(stationAfter.status).toBe('VERIFIED');
+    } else {
+      expect(stationAfter.status).toBe('CLAIMED');
     }
   });
 });

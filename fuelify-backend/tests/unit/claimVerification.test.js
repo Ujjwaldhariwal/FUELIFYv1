@@ -58,7 +58,7 @@ describe('claimVerification service', () => {
     expect(result.sourceChecks.stateRegistryMatch).toBe(true);
   });
 
-  test('rejects when claimant domain does not match website domain', async () => {
+  test('gmail claimant email with business website is scored lower but not auto-rejected', async () => {
     Station.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: 'station-2',
@@ -72,21 +72,33 @@ describe('claimVerification service', () => {
       }),
     });
 
-    const result = await verifyClaim({
+    const matchingDomainResult = await verifyClaim({
       stationId: 'station-2',
       evidence: {
         businessName: 'Shell Downtown',
         businessRegistrationId: 'OH-7654321',
         claimantName: 'John User',
-        claimantEmail: 'owner@differentdomain.com',
+        claimantEmail: 'owner@shelldowntown.com',
         claimantPhone: '+1 555 333 4444',
         website: 'https://shelldowntown.com',
       },
     });
 
-    expect(result.status).toBe('REJECTED');
-    expect(result.reasonCode).toBe('DOMAIN_MISMATCH');
-    expect(result.retryAt).toBeTruthy();
+    const gmailResult = await verifyClaim({
+      stationId: 'station-2',
+      evidence: {
+        businessName: 'Shell Downtown',
+        businessRegistrationId: 'OH-7654321',
+        claimantName: 'John User',
+        claimantEmail: 'owner@gmail.com',
+        claimantPhone: '+1 555 333 4444',
+        website: 'https://shelldowntown.com',
+      },
+    });
+
+    expect(gmailResult.reasonCode).not.toBe('DOMAIN_MISMATCH');
+    expect(gmailResult.status).toBe('APPROVED');
+    expect(gmailResult.decisionConfidence).toBeLessThan(matchingDomainResult.decisionConfidence);
   });
 
   test('blocks claim when station is blocked by risk policy', async () => {

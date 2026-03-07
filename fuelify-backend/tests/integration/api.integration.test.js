@@ -88,6 +88,29 @@ const makeVerifiedOwner = async ({ stationId, email, phone, password = 'DevPass1
   });
 };
 
+const makePendingOwner = async ({
+  stationId,
+  email,
+  phone,
+  otp = '123456',
+  name = 'Pending',
+}) => {
+  const verificationOtp = await bcrypt.hash(otp, 8);
+  const passwordHash = await bcrypt.hash('PendingPass123!', 12);
+  return Owner.create({
+    stationId,
+    name,
+    email,
+    phone,
+    passwordHash,
+    role: 'OWNER',
+    isVerified: false,
+    verificationOtp,
+    verificationExpiry: new Date(Date.now() + 10 * 60 * 1000),
+    lastLogin: null,
+  });
+};
+
 const loginAsOwner = async ({ identifier, password = 'DevPass123!' }) => {
   const loginRes = await request(app).post('/api/auth/login').send({
     identifier,
@@ -251,6 +274,61 @@ describe('Fuelify backend integration', () => {
     expect(res.body.station._id).toBe(station._id.toString());
   });
 
+  test('POST /api/auth/claim/initiate returns 409 for an already verified owner and does not downgrade owner', async () => {
+    const station = await makeStation({
+      name: 'Claim Initiate Guard Station',
+      slug: 'claim-initiate-guard-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    const owner = await makeVerifiedOwner({
+      stationId: station._id,
+      email: 'owner.claim.guard@fuelify.local',
+      phone: '+15550009991',
+      password: 'DevPass123!',
+    });
+
+    const res = await request(app).post('/api/auth/claim/initiate').send({
+      stationId: station._id.toString(),
+      phone: owner.phone,
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Station already claimed and verified. Please log in instead.');
+
+    const ownerAfter = await Owner.findById(owner._id).lean();
+    expect(ownerAfter.isVerified).toBe(true);
+  });
+
+  test('POST /api/auth/claim/verify rejects invalid email format', async () => {
+    const station = await makeStation({
+      name: 'Claim Verify Email Station',
+      slug: 'claim-verify-email-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+
+    await makePendingOwner({
+      stationId: station._id,
+      email: 'pending.claim.verify@fuelify.local',
+      phone: '+15550009992',
+      otp: '123456',
+    });
+
+    const res = await request(app).post('/api/auth/claim/verify').send({
+      stationId: station._id.toString(),
+      phone: '+15550009992',
+      otp: '123456',
+      name: 'Invalid Email Owner',
+      email: 'invalid-email',
+      password: 'DevPass123!',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid email format');
+  });
+
   test('POST /api/dashboard/prices updates station prices and logs PriceHistory', async () => {
     const station = await makeStation({
       name: 'Dashboard Station',
@@ -395,10 +473,14 @@ describe('Fuelify backend integration', () => {
     const summaryRes = await request(app).get(`/api/claims/station/${station._id.toString()}/summary`);
     expect(summaryRes.status).toBe(200);
     expect(summaryRes.body.stationId).toBe(station._id.toString());
-    expect(summaryRes.body.risk.status).toBeTruthy();
     expect(summaryRes.body.requestId).toBeTruthy();
     expect(summaryRes.body.claim).toBeTruthy();
     expect(summaryRes.body.claim.claimId).toBe(createRes.body.claimId);
+    expect(summaryRes.body.risk).toBeUndefined();
+    expect(summaryRes.body.claim.reasonCode).toBeUndefined();
+    expect(summaryRes.body.claim.message).toBeUndefined();
+    expect(summaryRes.body.claim.decisionConfidence).toBeUndefined();
+    expect(summaryRes.body.claim.sourceChecks).toBeUndefined();
 
     const storedClaim = await Claim.findById(createRes.body.claimId).lean();
     if (storedClaim.status === 'REJECTED' || storedClaim.status === 'BLOCKED') {
@@ -413,6 +495,64 @@ describe('Fuelify backend integration', () => {
 
       expect([200, 429]).toContain(retryRes.status);
     }
+  });
+
+  test('GET /api/claims/station/:stationId/summary hides sensitive fields publicly and reveals them to owner', async () => {
+    const owner = await Owner.create({
+      stationId: new mongoose.Types.ObjectId(),
+      name: 'Summary Owner',
+      email: 'summary.owner@fuelify.local',
+      phone: '+15550009993',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+
+    const station = await makeStation({
+      name: 'Summary Station',
+      slug: 'summary-station-columbus-oh',
+      regular: 3.299,
+      status: 'CLAIMED',
+      claimedBy: owner._id,
+    });
+    await Owner.findByIdAndUpdate(owner._id, { stationId: station._id });
+
+    const token = await loginAsOwner({ identifier: owner.email });
+    const claimRes = await request(app)
+      .post('/api/claims')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        stationId: station._id.toString(),
+        evidence: {
+          businessName: station.name,
+          businessRegistrationId: 'OH-129876',
+          claimantName: owner.name,
+          claimantEmail: owner.email,
+          claimantPhone: owner.phone,
+          website: station.website,
+        },
+      });
+    expect(claimRes.status).toBe(201);
+
+    const publicRes = await request(app).get(`/api/claims/station/${station._id.toString()}/summary`);
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.risk).toBeUndefined();
+    expect(publicRes.body.claim).toHaveProperty('claimId');
+    expect(publicRes.body.claim.reasonCode).toBeUndefined();
+    expect(publicRes.body.claim.sourceChecks).toBeUndefined();
+
+    const ownerRes = await request(app)
+      .get(`/api/claims/station/${station._id.toString()}/summary`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.risk).toBeTruthy();
+    expect(ownerRes.body.risk.status).toBeTruthy();
+    expect(ownerRes.body.claim).toHaveProperty('reasonCode');
+    expect(ownerRes.body.claim).toHaveProperty('message');
+    expect(ownerRes.body.claim).toHaveProperty('decisionConfidence');
+    expect(ownerRes.body.claim).toHaveProperty('sourceChecks');
+    expect(ownerRes.body.claim).toHaveProperty('retryCount');
+    expect(ownerRes.body.claim).toHaveProperty('decidedAt');
   });
 
   test('POST /api/claims requires authenticated owner token', async () => {

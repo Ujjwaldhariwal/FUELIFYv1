@@ -125,7 +125,7 @@ const evaluateSourceChecks = async ({ station, evidence }) => {
   };
 };
 
-const scoreClaimRisk = ({ checks, confidence, stationRiskStatus }) => {
+const scoreClaimRisk = ({ checks, confidence, stationRiskStatus, evidence, domainVerified }) => {
   if (stationRiskStatus === 'blocked') return 0;
 
   const weighted =
@@ -135,26 +135,20 @@ const scoreClaimRisk = ({ checks, confidence, stationRiskStatus }) => {
     confidence.domain * 0.1;
 
   let score = weighted;
+  if (evidence?.website && evidence?.claimantEmail && !domainVerified) {
+    score -= 0.1;
+  }
   if (!checks.googleMatch) score -= 0.1;
   if (stationRiskStatus === 'watchlist') score -= 0.2;
   return clampScore(score);
 };
 
-const decideClaim = ({ score, stationRiskStatus, domainVerified, evidence }) => {
+const decideClaim = ({ score, stationRiskStatus }) => {
   if (stationRiskStatus === 'blocked') {
     return {
       status: 'BLOCKED',
       reasonCode: 'STATION_BLOCKED',
       message: 'This station is currently blocked for verification.',
-      retryAt: new Date(Date.now() + COOLDOWN_HOURS * 60 * 60 * 1000),
-    };
-  }
-
-  if (evidence.website && evidence.claimantEmail && !domainVerified) {
-    return {
-      status: 'REJECTED',
-      reasonCode: 'DOMAIN_MISMATCH',
-      message: 'Website and claimant email domains do not match.',
       retryAt: new Date(Date.now() + COOLDOWN_HOURS * 60 * 60 * 1000),
     };
   }
@@ -189,12 +183,12 @@ const verifyClaim = async ({ stationId, evidence }) => {
     checks,
     confidence,
     stationRiskStatus: station.riskStatus || 'clean',
+    evidence,
+    domainVerified,
   });
   const decision = decideClaim({
     score,
     stationRiskStatus: station.riskStatus || 'clean',
-    domainVerified,
-    evidence,
   });
 
   return {

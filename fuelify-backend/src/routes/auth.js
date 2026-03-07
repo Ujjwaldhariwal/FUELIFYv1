@@ -31,13 +31,20 @@ router.post('/claim/initiate', otpLimiter, async (req, res, next) => {
     if (station.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station claims are temporarily blocked' });
     }
-    if (station.status === 'CLAIMED' || station.status === 'VERIFIED') {
-      return res.status(409).json({ error: 'Station already claimed' });
-    }
 
     const existingOwner = await Owner.findOne({ phone });
-    if (existingOwner && existingOwner.stationId.toString() !== stationId) {
+    if (existingOwner?.isVerified && existingOwner.stationId.toString() === stationId) {
+      return res.status(409).json({
+        error: 'Station already claimed and verified. Please log in instead.',
+      });
+    }
+    if (existingOwner?.isVerified && existingOwner.stationId.toString() !== stationId) {
       return res.status(409).json({ error: 'Phone already linked to another station claim' });
+    }
+    // Only reach upsert if owner does not exist OR is not yet verified
+
+    if (station.status === 'CLAIMED' || station.status === 'VERIFIED') {
+      return res.status(409).json({ error: 'Station already claimed' });
     }
 
     const otp = generateOtp();
@@ -110,6 +117,10 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
     owner.name = name;
     owner.email = email;
     owner.passwordHash = passwordHash;

@@ -1,8 +1,10 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 
 const Claim = require('../models/Claim');
 const Station = require('../models/Station');
+const Owner = require('../models/Owner');
 const { claimLimiter } = require('../middleware/rateLimit');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
 const { requireAuth } = require('../middleware/auth');
@@ -65,6 +67,23 @@ const applyStationRiskUpdate = async (stationId) => {
 
 const canAccessClaim = (claim, owner) =>
   owner?.role === 'ADMIN' || (claim.ownerId && claim.ownerId.toString() === owner?._id?.toString());
+
+const resolveOptionalVerifiedOwner = async (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  if (!token) return null;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded?.id || !mongoose.Types.ObjectId.isValid(decoded.id)) return null;
+    const owner = await Owner.findById(decoded.id).select('_id role isVerified').lean();
+    if (!owner || owner.isVerified !== true) return null;
+    return owner;
+  } catch (err) {
+    return null;
+  }
+};
 
 // POST /api/claims
 router.post('/', requireAuth, claimLimiter, async (req, res, next) => {
@@ -195,41 +214,54 @@ router.get('/station/:stationId/summary', validateObjectIdParam('stationId'), as
     const latestClaim = await Claim.findOne({ stationId: station._id })
       .sort({ createdAt: -1 })
       .select(
-        '_id status reasonCode message decisionConfidence sourceChecks retryCount retryAt slaEta decidedAt createdAt updatedAt'
+        '_id ownerId status reasonCode message decisionConfidence sourceChecks retryCount retryAt slaEta decidedAt createdAt updatedAt'
       )
       .lean();
 
-    return res.json({
+    const publicClaim = latestClaim
+      ? {
+          claimId: latestClaim._id,
+          status: latestClaim.status,
+          canRetry:
+            (latestClaim.status === 'REJECTED' || latestClaim.status === 'BLOCKED') &&
+            (!latestClaim.retryAt || latestClaim.retryAt <= new Date()),
+          retryAt: latestClaim.retryAt,
+          slaEta: latestClaim.slaEta,
+          createdAt: latestClaim.createdAt,
+          updatedAt: latestClaim.updatedAt,
+        }
+      : null;
+
+    const optionalOwner = await resolveOptionalVerifiedOwner(req);
+    const canViewSensitive = Boolean(latestClaim && optionalOwner && canAccessClaim(latestClaim, optionalOwner));
+
+    const response = {
       stationId: station._id,
       stationStatus: station.status,
-      risk: {
+      claim: publicClaim,
+      requestId: req.requestId,
+    };
+
+    if (canViewSensitive) {
+      response.risk = {
         status: station.riskStatus,
         score: station.riskScore,
         reasons: station.riskReasons || [],
         evaluatedAt: station.riskEvaluatedAt,
         blockedAt: station.blockedAt,
-      },
-      claim: latestClaim
-        ? {
-            claimId: latestClaim._id,
-            status: latestClaim.status,
-            reasonCode: latestClaim.reasonCode,
-            message: latestClaim.message,
-            decisionConfidence: latestClaim.decisionConfidence,
-            sourceChecks: latestClaim.sourceChecks,
-            retryCount: latestClaim.retryCount,
-            retryAt: latestClaim.retryAt,
-            canRetry:
-              (latestClaim.status === 'REJECTED' || latestClaim.status === 'BLOCKED') &&
-              (!latestClaim.retryAt || latestClaim.retryAt <= new Date()),
-            slaEta: latestClaim.slaEta,
-            decidedAt: latestClaim.decidedAt,
-            createdAt: latestClaim.createdAt,
-            updatedAt: latestClaim.updatedAt,
-          }
-        : null,
-      requestId: req.requestId,
-    });
+      };
+      response.claim = {
+        ...publicClaim,
+        reasonCode: latestClaim.reasonCode,
+        message: latestClaim.message,
+        decisionConfidence: latestClaim.decisionConfidence,
+        sourceChecks: latestClaim.sourceChecks,
+        retryCount: latestClaim.retryCount,
+        decidedAt: latestClaim.decidedAt,
+      };
+    }
+
+    return res.json(response);
   } catch (err) {
     return next(err);
   }

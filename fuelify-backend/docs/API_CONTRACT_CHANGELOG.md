@@ -38,6 +38,11 @@
   - `POST /api/claims` requires authenticated owner token and ownership of the claimed station.
   - `GET /api/claims/:id/status` requires authenticated owner token tied to the claim (`ADMIN` can access all).
   - `POST /api/claims/:id/retry` requires authenticated owner token tied to the claim (`ADMIN` can access all).
+- Automated claim verification scoring now uses stronger source checks:
+  - Google Place details match (when `GOOGLE_PLACES_API_KEY` + `station.placeId` available).
+  - OSM consistency check using station source/address/name signals.
+  - State registration format validation based on station state.
+  - Domain mismatch rejection when claimant email domain and website domain diverge.
 
 ### Operational behavior
 - Added background risk rescoring monitor (enabled by default outside tests):

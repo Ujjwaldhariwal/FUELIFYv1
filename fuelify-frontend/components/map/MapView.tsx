@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { FuelType, Station } from '@/types';
+import type { FuelType, Station, StationCluster } from '@/types';
 import {
   createClusterMarkerElement,
   createMarkerElement,
@@ -56,6 +56,8 @@ export interface MapViewportInfo {
 
 interface MapViewProps {
   stations: Station[];
+  clusters?: StationCluster[];
+  useServerClusters?: boolean;
   selectedFuel: FuelType;
   center: [number, number];
   onStationSelect: (station: Station) => void;
@@ -155,6 +157,8 @@ const buildDisplayPoints = (stations: Station[], selectedFuel: FuelType, zoom: n
 
 export const MapView = ({
   stations,
+  clusters = [],
+  useServerClusters = false,
   selectedFuel,
   center,
   onStationSelect,
@@ -172,8 +176,19 @@ export const MapView = ({
   const [zoomLevel, setZoomLevel] = useState(initialZoom);
 
   const displayPoints = useMemo(
-    () => buildDisplayPoints(stations, selectedFuel, zoomLevel),
-    [stations, selectedFuel, zoomLevel]
+    () => {
+      if (useServerClusters && clusters.length > 0) {
+        return clusters.map((cluster) => ({
+          kind: 'cluster' as const,
+          lat: cluster.center.lat,
+          lng: cluster.center.lng,
+          count: cluster.count,
+          minPrice: cluster.minPrice,
+        }));
+      }
+      return buildDisplayPoints(stations, selectedFuel, zoomLevel);
+    },
+    [clusters, selectedFuel, stations, useServerClusters, zoomLevel]
   );
 
   useEffect(() => {

@@ -174,6 +174,45 @@ describe('Fuelify backend integration', () => {
     expect(res.body.stations[0]._id).toBe(inBounds._id.toString());
   });
 
+  test('GET /api/stations/clusters returns aggregated viewport clusters', async () => {
+    await makeStation({
+      name: 'Cluster A One',
+      slug: 'cluster-a-one-columbus-oh',
+      regular: 3.099,
+      lat: 40.001,
+      lng: -82.901,
+    });
+    await makeStation({
+      name: 'Cluster A Two',
+      slug: 'cluster-a-two-columbus-oh',
+      regular: 3.299,
+      lat: 40.011,
+      lng: -82.911,
+    });
+    await makeStation({
+      name: 'Cluster B One',
+      slug: 'cluster-b-one-columbus-oh',
+      regular: 3.499,
+      lat: 39.901,
+      lng: -82.801,
+    });
+
+    const res = await request(app).get('/api/stations/clusters').query({
+      bbox: '-83.20,39.80,-82.70,40.20',
+      zoom: 9,
+      fuel: 'regular',
+      limit: 50,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.queryMode).toBe('bbox_cluster');
+    expect(res.body.totalStations).toBe(3);
+    expect(res.body.totalClusters).toBeGreaterThanOrEqual(2);
+    expect(Array.isArray(res.body.clusters)).toBe(true);
+    expect(res.body.clusters.length).toBeGreaterThanOrEqual(2);
+    expect(res.body.clusters[0].count).toBeGreaterThanOrEqual(1);
+  });
+
   test('POST /api/auth/login returns token + owner + station for verified owner', async () => {
     const station = await makeStation({
       name: 'Login Station',

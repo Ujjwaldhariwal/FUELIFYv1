@@ -5,6 +5,7 @@ const router = express.Router();
 const Station = require('../models/Station');
 const PriceHistory = require('../models/PriceHistory');
 const { requireAuth } = require('../middleware/auth');
+const { scheduleStationCacheInvalidation } = require('../services/stationCache');
 
 // All routes in this file require JWT auth
 router.use(requireAuth);
@@ -25,6 +26,11 @@ router.patch('/station', async (req, res, next) => {
   try {
     const allowed = ['name', 'address', 'phone', 'website', 'hours', 'services', 'brand'];
     const updates = {};
+    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus').lean();
+    if (!currentStation) return res.status(404).json({ error: 'Station not found' });
+    if (currentStation.riskStatus === 'blocked') {
+      return res.status(403).json({ error: 'Station is blocked from profile updates' });
+    }
 
     allowed.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
@@ -37,6 +43,10 @@ router.patch('/station', async (req, res, next) => {
     );
 
     if (!station) return res.status(404).json({ error: 'Station not found' });
+    await scheduleStationCacheInvalidation({
+      reason: 'STATION_PROFILE_UPDATED',
+      stationId: req.owner.stationId.toString(),
+    });
     return res.json({ station });
   } catch (err) {
     return next(err);
@@ -47,6 +57,11 @@ router.patch('/station', async (req, res, next) => {
 router.post('/prices', async (req, res, next) => {
   try {
     const { regular, midgrade, premium, diesel, e85 } = req.body;
+    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus').lean();
+    if (!currentStation) return res.status(404).json({ error: 'Station not found' });
+    if (currentStation.riskStatus === 'blocked') {
+      return res.status(403).json({ error: 'Station is blocked from price updates' });
+    }
     const submitted = { regular, midgrade, premium, diesel, e85 };
 
     const validKeys = Object.keys(submitted).filter(
@@ -96,6 +111,10 @@ router.post('/prices', async (req, res, next) => {
       confidenceScore: 1.0,
     });
 
+    await scheduleStationCacheInvalidation({
+      reason: 'STATION_PRICES_UPDATED',
+      stationId: req.owner.stationId.toString(),
+    });
     return res.json({ success: true, prices: station.prices });
   } catch (err) {
     return next(err);

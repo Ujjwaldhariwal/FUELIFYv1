@@ -55,8 +55,8 @@ const ServicesSchema = new mongoose.Schema(
 
 const StationSchema = new mongoose.Schema(
   {
-    osmId:   { type: String, default: null },
-    placeId: { type: String, default: null },
+    osmId:   { type: String, default: undefined },
+    placeId: { type: String, default: undefined },
     slug:    { type: String, required: true },
     name:    { type: String, required: true },
     brand: {
@@ -92,6 +92,16 @@ const StationSchema = new mongoose.Schema(
     metaDescription:  { type: String, default: '' },
     viewCount:        { type: Number, default: 0 },
     searchAppearances:{ type: Number, default: 0 },
+    riskStatus: {
+      type: String,
+      enum: ['clean', 'watchlist', 'blocked'],
+      default: 'clean',
+      index: true,
+    },
+    riskScore: { type: Number, default: 0, min: 0, max: 1 },
+    riskReasons: { type: [String], default: () => [] },
+    riskEvaluatedAt: { type: Date, default: null },
+    blockedAt: { type: Date, default: null },
     dataSource: {
       type: String,
       enum: ['OSM', 'GOOGLE_PLACES', 'MANUAL'],
@@ -106,8 +116,14 @@ StationSchema.index({ coordinates: '2dsphere' });
 StationSchema.index({ 'address.state': 1, status: 1 });
 StationSchema.index({ brand: 1 });
 StationSchema.index({ slug: 1 },    { unique: true });
-StationSchema.index({ placeId: 1 }, { unique: true, sparse: true });
-StationSchema.index({ osmId: 1 },   { unique: true, sparse: true });
+StationSchema.index(
+  { placeId: 1 },
+  { unique: true, partialFilterExpression: { placeId: { $exists: true, $type: 'string' } } }
+);
+StationSchema.index(
+  { osmId: 1 },
+  { unique: true, partialFilterExpression: { osmId: { $exists: true, $type: 'string' } } }
+);
 StationSchema.index({ name: 'text', 'address.city': 'text' });
 
 module.exports = mongoose.model('Station', StationSchema);

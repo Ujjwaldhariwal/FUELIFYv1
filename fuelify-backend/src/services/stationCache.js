@@ -12,7 +12,21 @@ const toPositiveInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const buildKey = ({ lat, lng, radiusKm, fuel, page, limit, state }) =>
+const buildKey = ({
+  lat,
+  lng,
+  radiusKm,
+  fuel,
+  page,
+  limit,
+  state,
+  queryMode,
+  bboxWest,
+  bboxSouth,
+  bboxEast,
+  bboxNorth,
+  zoom,
+}) =>
   `${CACHE_PREFIX}${CACHE_VERSION}:${JSON.stringify({
     lat: lat ?? null,
     lng: lng ?? null,
@@ -21,6 +35,12 @@ const buildKey = ({ lat, lng, radiusKm, fuel, page, limit, state }) =>
     page,
     limit,
     state: state ?? null,
+    queryMode: queryMode ?? null,
+    bboxWest: bboxWest ?? null,
+    bboxSouth: bboxSouth ?? null,
+    bboxEast: bboxEast ?? null,
+    bboxNorth: bboxNorth ?? null,
+    zoom: zoom ?? null,
   })}`;
 
 const getMemory = (key) => {

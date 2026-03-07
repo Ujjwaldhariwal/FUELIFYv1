@@ -18,6 +18,7 @@ const VALID_FUELS = ['regular', 'midgrade', 'premium', 'diesel', 'e85'];
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const DEFAULT_RADIUS_KM = 25;
+const MAX_LIMIT = 500;
 
 const toNumber = (value) => {
   const parsed = Number(value);
@@ -27,6 +28,16 @@ const toNumber = (value) => {
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseBBox = (rawBbox) => {
+  if (typeof rawBbox !== 'string') return null;
+  const parts = rawBbox.split(',').map((value) => Number(value.trim()));
+  if (parts.length !== 4 || parts.some((value) => !Number.isFinite(value))) return null;
+  const [west, south, east, north] = parts;
+  if (west >= east || south >= north) return null;
+  if (west < -180 || east > 180 || south < -90 || north > 90) return null;
+  return { west, south, east, north };
 };
 
 const mapStationPayload = (station) => ({
@@ -52,13 +63,18 @@ router.get('/', async (req, res, next) => {
     const lat = toNumber(req.query.lat);
     const lng = toNumber(req.query.lng);
     const radiusKm = toNumber(req.query.radius) || DEFAULT_RADIUS_KM;
+    const bbox = parseBBox(req.query.bbox);
+    const zoom = toNumber(req.query.zoom);
     const fuel = typeof req.query.fuel === 'string' ? req.query.fuel : null;
     const page = toPositiveInt(req.query.page, DEFAULT_PAGE);
-    const limit = Math.min(toPositiveInt(req.query.limit, DEFAULT_LIMIT), 100);
+    const limit = Math.min(toPositiveInt(req.query.limit, DEFAULT_LIMIT), MAX_LIMIT);
     const skip = (page - 1) * limit;
 
     if (fuel && !VALID_FUELS.includes(fuel)) {
       return res.status(400).json({ error: 'Invalid fuel type' });
+    }
+    if (req.query.bbox && !bbox) {
+      return res.status(400).json({ error: 'Invalid bbox. Use west,south,east,north' });
     }
 
     const projection = {
@@ -73,6 +89,8 @@ router.get('/', async (req, res, next) => {
       services: 1,
     };
     const hasLocation = lat !== null && lng !== null;
+    const hasBbox = bbox !== null;
+    const queryMode = hasBbox ? 'bbox' : hasLocation ? 'near' : 'state';
     const cacheParams = {
       lat,
       lng,
@@ -80,7 +98,13 @@ router.get('/', async (req, res, next) => {
       fuel,
       page,
       limit,
-      state: hasLocation ? null : typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH',
+      state: hasLocation || hasBbox ? null : typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH',
+      queryMode,
+      bboxWest: bbox?.west ?? null,
+      bboxSouth: bbox?.south ?? null,
+      bboxEast: bbox?.east ?? null,
+      bboxNorth: bbox?.north ?? null,
+      zoom,
     };
     const cached = await getCachedStations(cacheParams);
     if (cached) return res.json(cached);
@@ -88,7 +112,35 @@ router.get('/', async (req, res, next) => {
     let stations = [];
     let total = 0;
 
-    if (hasLocation) {
+    if (hasBbox) {
+      const filter = {
+        coordinates: {
+          $geoWithin: {
+            $box: [
+              [bbox.west, bbox.south],
+              [bbox.east, bbox.north],
+            ],
+          },
+        },
+      };
+      total = await Station.countDocuments(filter);
+
+      const pipeline = [{ $match: filter }];
+      if (fuel) {
+        pipeline.push({
+          $addFields: {
+            __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
+          },
+        });
+        pipeline.push({ $sort: { __fuelSort: 1, name: 1 } });
+      } else {
+        pipeline.push({ $sort: { name: 1 } });
+      }
+      pipeline.push({ $skip: skip });
+      pipeline.push({ $limit: limit });
+      pipeline.push({ $project: projection });
+      stations = await Station.aggregate(pipeline);
+    } else if (hasLocation) {
       const geoNear = {
         $geoNear: {
           near: { type: 'Point', coordinates: [lng, lat] },
@@ -155,6 +207,7 @@ router.get('/', async (req, res, next) => {
       page,
       limit,
       pages: Math.ceil(total / limit) || 1,
+      queryMode,
     };
     await setCachedStations(cacheParams, payload);
     return res.json(payload);

@@ -144,6 +144,36 @@ describe('Fuelify backend integration', () => {
     expect(res.body.stations[1]._id).toBe(expensive._id.toString());
   });
 
+  test('GET /api/stations supports bbox viewport mode', async () => {
+    const inBounds = await makeStation({
+      name: 'Viewport In Bounds',
+      slug: 'viewport-in-bounds-columbus-oh',
+      regular: 3.299,
+      lat: 40.02,
+      lng: -82.95,
+    });
+    await makeStation({
+      name: 'Viewport Out Bounds',
+      slug: 'viewport-out-bounds-columbus-oh',
+      regular: 3.199,
+      lat: 41.4,
+      lng: -84.2,
+    });
+
+    const res = await request(app).get('/api/stations').query({
+      bbox: '-83.20,39.80,-82.70,40.20',
+      fuel: 'regular',
+      limit: 200,
+      zoom: 12,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.queryMode).toBe('bbox');
+    expect(res.body.total).toBe(1);
+    expect(res.body.stations).toHaveLength(1);
+    expect(res.body.stations[0]._id).toBe(inBounds._id.toString());
+  });
+
   test('POST /api/auth/login returns token + owner + station for verified owner', async () => {
     const station = await makeStation({
       name: 'Login Station',

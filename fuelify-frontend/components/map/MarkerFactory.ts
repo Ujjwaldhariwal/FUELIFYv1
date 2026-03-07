@@ -86,3 +86,41 @@ export const createMarkerElement = (
 
   return { element: el, hasPrice };
 };
+
+export const createClusterMarkerElement = (
+  count: number,
+  minPrice: number | null,
+  colors: MarkerColors,
+): HTMLDivElement => {
+  const el = document.createElement('div');
+  el.className = 'fuelify-cluster-marker';
+
+  const size = count >= 50 ? 52 : count >= 20 ? 46 : 40;
+  const subtitle = minPrice !== null ? `$${minPrice.toFixed(2)} min` : `${count} stations`;
+  const main = count >= 100 ? '99+' : String(count);
+
+  el.innerHTML = `
+    <div style="
+      width:${size}px;
+      height:${size}px;
+      border-radius:999px;
+      border:2px solid ${colors.selectedBorder};
+      background:${colors.selectedBg};
+      color:#fff;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      box-shadow:0 6px 20px rgba(0,0,0,0.24);
+      line-height:1;
+      user-select:none;
+      cursor:pointer;
+      transform:translateZ(0);
+    ">
+      <span style="font-weight:900;font-size:13px">${main}</span>
+      <span style="font-weight:700;font-size:9px;opacity:0.92;margin-top:2px">${subtitle}</span>
+    </div>
+  `;
+
+  return el;
+};

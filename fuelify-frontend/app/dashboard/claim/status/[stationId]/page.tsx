@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCcw } from 'lucide-react';
 import {
+  fetchStationById,
   formatApiErrorForToast,
   getClaimStatus,
   getStationClaimSummary,
@@ -32,13 +33,36 @@ export default function ClaimStatusPage() {
   const [summary, setSummary] = useState<StationClaimSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [businessName, setBusinessName] = useState('');
+  const [businessRegistrationId, setBusinessRegistrationId] = useState('');
+  const [claimantName, setClaimantName] = useState('');
+  const [claimantEmail, setClaimantEmail] = useState('');
+  const [claimantPhone, setClaimantPhone] = useState('');
   const [website, setWebsite] = useState('');
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
     try {
-      const base = await getStationClaimSummary(stationId);
+      const [base, station] = await Promise.all([
+        getStationClaimSummary(stationId),
+        fetchStationById(stationId).catch(() => null),
+      ]);
       setSummary(base);
+      if (station?.station?.name) {
+        setBusinessName((current) => current || station.station.name);
+      }
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem('fuelify_owner');
+        if (raw) {
+          try {
+            const owner = JSON.parse(raw);
+            setClaimantName((current) => current || owner?.name || '');
+            setClaimantEmail((current) => current || owner?.email || '');
+          } catch {
+            // ignore malformed storage
+          }
+        }
+      }
       if (claimId) {
         try {
           await getClaimStatus(claimId);
@@ -73,9 +97,20 @@ export default function ClaimStatusPage() {
 
   const handleRetry = async () => {
     if (!summary?.claim?.claimId) return;
+    if (!businessName || !businessRegistrationId || !claimantName || !claimantEmail || !claimantPhone) {
+      show('All required evidence fields must be provided.', 'warning');
+      return;
+    }
     setRetrying(true);
     try {
-      const retry = await retryClaimVerification(summary.claim.claimId, website ? { website } : undefined);
+      const retry = await retryClaimVerification(summary.claim.claimId, {
+        businessName,
+        businessRegistrationId,
+        claimantName,
+        claimantEmail,
+        claimantPhone,
+        website: website || undefined,
+      });
       show(`Retry submitted (${retry.status})`, 'success');
       await loadSummary();
     } catch (error) {
@@ -145,6 +180,37 @@ export default function ClaimStatusPage() {
               You can submit updated evidence for another verification attempt.
             </p>
             <div className="mt-4 space-y-3">
+              <Input
+                label="Business Name"
+                placeholder="Station legal name"
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+              />
+              <Input
+                label="Business Registration ID"
+                placeholder="OH-123456"
+                value={businessRegistrationId}
+                onChange={(e) => setBusinessRegistrationId(e.target.value)}
+              />
+              <Input
+                label="Claimant Name"
+                placeholder="Owner full name"
+                value={claimantName}
+                onChange={(e) => setClaimantName(e.target.value)}
+              />
+              <Input
+                label="Claimant Email"
+                placeholder="owner@station.com"
+                type="email"
+                value={claimantEmail}
+                onChange={(e) => setClaimantEmail(e.target.value)}
+              />
+              <Input
+                label="Claimant Phone"
+                placeholder="+15550001111"
+                value={claimantPhone}
+                onChange={(e) => setClaimantPhone(e.target.value)}
+              />
               <Input
                 label="Website (Optional)"
                 placeholder="https://yourstation.com"

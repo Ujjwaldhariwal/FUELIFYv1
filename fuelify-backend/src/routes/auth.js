@@ -122,10 +122,10 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
 
     const station = await Station.findByIdAndUpdate(
       stationId,
-      { status: 'VERIFIED', claimedBy: owner._id, claimedAt: new Date() },
+      { status: 'CLAIMED', claimedBy: owner._id, claimedAt: new Date() },
       { new: true }
     );
-    await scheduleStationCacheInvalidation({ reason: 'CLAIM_VERIFIED', stationId: stationId.toString() });
+    await scheduleStationCacheInvalidation({ reason: 'CLAIM_ACCOUNT_VERIFIED', stationId: stationId.toString() });
 
     sendWelcomeEmail(email, name, station.name).catch(console.error);
 

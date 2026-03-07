@@ -374,9 +374,9 @@ export default function ClaimFlowPage() {
           {step === 5 && (
             <div className="py-4 text-center">
               <CheckCircle className="mx-auto mb-4 h-16 w-16 text-[var(--color-success)]" />
-              <h1 className="mb-2 text-xl font-bold text-[var(--color-success)]">You're verified!</h1>
+              <h1 className="mb-2 text-xl font-bold text-[var(--color-success)]">Account created</h1>
               <p className="mb-6 text-sm text-[var(--text-secondary)]">
-                {station.name} is now live on Fuelify with an Owner Verified badge.
+                {station.name} claim is under verification review. You can track status from your dashboard.
               </p>
               <Button fullWidth onClick={() => router.push('/dashboard')}>
                 Go to Dashboard &rarr;

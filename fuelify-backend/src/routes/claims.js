@@ -27,6 +27,29 @@ const validateClaimEvidence = (evidence) => {
   return null;
 };
 
+const syncStationVerificationStatus = async ({ stationId, claimStatus }) => {
+  const station = await Station.findById(stationId).select('status claimedBy claimedAt');
+  if (!station) return;
+
+  if (claimStatus === 'APPROVED') {
+    station.status = 'VERIFIED';
+    if (!station.claimedAt) station.claimedAt = new Date();
+    await station.save();
+    return;
+  }
+
+  if (station.claimedBy) {
+    station.status = 'CLAIMED';
+    if (!station.claimedAt) station.claimedAt = new Date();
+    await station.save();
+    return;
+  }
+
+  station.status = 'UNCLAIMED';
+  station.claimedAt = null;
+  await station.save();
+};
+
 const applyStationRiskUpdate = async (stationId) => {
   const station = await Station.findById(stationId);
   if (!station) return;
@@ -53,9 +76,15 @@ router.post('/', claimLimiter, async (req, res, next) => {
       return res.status(400).json({ code: 'INVALID_EVIDENCE', message: validationError, requestId });
     }
 
+    const stationRecord = await Station.findById(stationId).select('_id claimedBy');
+    if (!stationRecord) {
+      return res.status(404).json({ code: 'STATION_NOT_FOUND', message: 'Station not found', requestId });
+    }
+
     const claimResult = await verifyClaim({ stationId, evidence });
     const claim = await Claim.create({
       stationId,
+      ownerId: stationRecord.claimedBy || null,
       evidence: { ...evidence, domainVerified: claimResult.domainVerified },
       status: claimResult.status,
       reasonCode: claimResult.reasonCode,
@@ -67,6 +96,7 @@ router.post('/', claimLimiter, async (req, res, next) => {
       slaEta: new Date(Date.now() + SLA_HOURS * 60 * 60 * 1000),
     });
 
+    await syncStationVerificationStatus({ stationId, claimStatus: claim.status });
     await applyStationRiskUpdate(stationId);
     await scheduleStationCacheInvalidation({ reason: 'CLAIM_CREATED', stationId });
 
@@ -203,6 +233,7 @@ router.post('/:id/retry', validateObjectIdParam('id'), claimLimiter, async (req,
     claim.retryCount += 1;
     await claim.save();
 
+    await syncStationVerificationStatus({ stationId: claim.stationId, claimStatus: claim.status });
     await applyStationRiskUpdate(claim.stationId);
     await scheduleStationCacheInvalidation({ reason: 'CLAIM_RETRIED', stationId: claim.stationId.toString() });
 

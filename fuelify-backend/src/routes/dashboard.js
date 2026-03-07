@@ -26,10 +26,13 @@ router.patch('/station', async (req, res, next) => {
   try {
     const allowed = ['name', 'address', 'phone', 'website', 'hours', 'services', 'brand'];
     const updates = {};
-    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus').lean();
+    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus status').lean();
     if (!currentStation) return res.status(404).json({ error: 'Station not found' });
     if (currentStation.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station is blocked from profile updates' });
+    }
+    if (currentStation.status !== 'VERIFIED') {
+      return res.status(403).json({ error: 'Station profile can be updated after verification approval' });
     }
 
     allowed.forEach((field) => {
@@ -57,10 +60,13 @@ router.patch('/station', async (req, res, next) => {
 router.post('/prices', async (req, res, next) => {
   try {
     const { regular, midgrade, premium, diesel, e85 } = req.body;
-    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus').lean();
+    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus status').lean();
     if (!currentStation) return res.status(404).json({ error: 'Station not found' });
     if (currentStation.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station is blocked from price updates' });
+    }
+    if (currentStation.status !== 'VERIFIED') {
+      return res.status(403).json({ error: 'Price updates are enabled after verification approval' });
     }
     const submitted = { regular, midgrade, premium, diesel, e85 };
 

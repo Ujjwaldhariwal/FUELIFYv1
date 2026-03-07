@@ -13,8 +13,6 @@ const router = express.Router();
 
 const SLA_HOURS = 24;
 
-const buildRequestId = () => `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
 const validateClaimEvidence = (evidence) => {
   if (!evidence) return 'Evidence is required';
   const required = [
@@ -45,7 +43,7 @@ const applyStationRiskUpdate = async (stationId) => {
 router.post('/', claimLimiter, async (req, res, next) => {
   try {
     const { stationId, evidence } = req.body;
-    const requestId = buildRequestId();
+    const requestId = req.requestId;
     if (!stationId || !mongoose.Types.ObjectId.isValid(stationId)) {
       return res.status(400).json({ code: 'INVALID_STATION_ID', message: 'Invalid stationId', requestId });
     }
@@ -89,7 +87,7 @@ router.post('/', claimLimiter, async (req, res, next) => {
 // GET /api/claims/:id/status
 router.get('/:id/status', validateObjectIdParam('id'), async (req, res, next) => {
   try {
-    const requestId = buildRequestId();
+    const requestId = req.requestId;
     const claim = await Claim.findById(req.params.id).lean();
     if (!claim) {
       return res.status(404).json({ code: 'CLAIM_NOT_FOUND', message: 'Claim not found', requestId });
@@ -107,10 +105,65 @@ router.get('/:id/status', validateObjectIdParam('id'), async (req, res, next) =>
   }
 });
 
+// GET /api/claims/station/:stationId/summary
+router.get('/station/:stationId/summary', validateObjectIdParam('stationId'), async (req, res, next) => {
+  try {
+    const station = await Station.findById(req.params.stationId)
+      .select('_id status riskStatus riskScore riskReasons riskEvaluatedAt blockedAt')
+      .lean();
+    if (!station) {
+      return res
+        .status(404)
+        .json({ code: 'STATION_NOT_FOUND', message: 'Station not found', requestId: req.requestId });
+    }
+
+    const latestClaim = await Claim.findOne({ stationId: station._id })
+      .sort({ createdAt: -1 })
+      .select(
+        '_id status reasonCode message decisionConfidence sourceChecks retryCount retryAt slaEta decidedAt createdAt updatedAt'
+      )
+      .lean();
+
+    return res.json({
+      stationId: station._id,
+      stationStatus: station.status,
+      risk: {
+        status: station.riskStatus,
+        score: station.riskScore,
+        reasons: station.riskReasons || [],
+        evaluatedAt: station.riskEvaluatedAt,
+        blockedAt: station.blockedAt,
+      },
+      claim: latestClaim
+        ? {
+            claimId: latestClaim._id,
+            status: latestClaim.status,
+            reasonCode: latestClaim.reasonCode,
+            message: latestClaim.message,
+            decisionConfidence: latestClaim.decisionConfidence,
+            sourceChecks: latestClaim.sourceChecks,
+            retryCount: latestClaim.retryCount,
+            retryAt: latestClaim.retryAt,
+            canRetry:
+              (latestClaim.status === 'REJECTED' || latestClaim.status === 'BLOCKED') &&
+              (!latestClaim.retryAt || latestClaim.retryAt <= new Date()),
+            slaEta: latestClaim.slaEta,
+            decidedAt: latestClaim.decidedAt,
+            createdAt: latestClaim.createdAt,
+            updatedAt: latestClaim.updatedAt,
+          }
+        : null,
+      requestId: req.requestId,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // POST /api/claims/:id/retry
 router.post('/:id/retry', validateObjectIdParam('id'), claimLimiter, async (req, res, next) => {
   try {
-    const requestId = buildRequestId();
+    const requestId = req.requestId;
     const claim = await Claim.findById(req.params.id);
     if (!claim) {
       return res.status(404).json({ code: 'CLAIM_NOT_FOUND', message: 'Claim not found', requestId });

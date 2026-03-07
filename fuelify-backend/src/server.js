@@ -13,7 +13,9 @@ const dashboardRouter = require('./routes/dashboard');
 const adminRouter = require('./routes/admin');
 const claimsRouter = require('./routes/claims');
 const errorHandler = require('./middleware/errorHandler');
+const { requestContext } = require('./middleware/requestContext');
 const { apiLimiter } = require('./middleware/rateLimit');
+const { startRiskMonitor, stopRiskMonitor } = require('./services/riskMonitor');
 
 const createApp = () => {
   const app = express();
@@ -35,6 +37,7 @@ const createApp = () => {
   );
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(requestContext);
 
   // Rate limiting
   app.use('/api', apiLimiter);
@@ -72,6 +75,9 @@ const connectDB = async () => {
 const startServer = async () => {
   await connectDB();
   const PORT = process.env.PORT || 5000;
+  if (process.env.NODE_ENV !== 'test' && process.env.ENABLE_RISK_MONITOR !== 'false') {
+    startRiskMonitor();
+  }
   return app.listen(PORT, () => console.log(`[Server] Running on port ${PORT}`));
 };
 
@@ -79,4 +85,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, createApp, connectDB, startServer };
+module.exports = { app, createApp, connectDB, startServer, stopRiskMonitor };

@@ -113,6 +113,7 @@ describe('Fuelify backend integration', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
     expect(res.body.timestamp).toBeDefined();
+    expect(res.headers['x-request-id']).toBeTruthy();
   });
 
   test('GET /api/stations returns stations sorted by selected fuel price', async () => {
@@ -225,6 +226,8 @@ describe('Fuelify backend integration', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Invalid stationId/);
+    expect(res.body.code).toBe('INVALID_OBJECT_ID');
+    expect(res.body.requestId).toBeTruthy();
   });
 
   test('claim lifecycle supports submit, status, and retry', async () => {
@@ -255,6 +258,15 @@ describe('Fuelify backend integration', () => {
     expect(statusRes.status).toBe(200);
     expect(statusRes.body.status).toBeTruthy();
     expect(statusRes.body.requestId).toBeTruthy();
+    expect(statusRes.headers['x-request-id']).toBeTruthy();
+
+    const summaryRes = await request(app).get(`/api/claims/station/${station._id.toString()}/summary`);
+    expect(summaryRes.status).toBe(200);
+    expect(summaryRes.body.stationId).toBe(station._id.toString());
+    expect(summaryRes.body.risk.status).toBeTruthy();
+    expect(summaryRes.body.requestId).toBeTruthy();
+    expect(summaryRes.body.claim).toBeTruthy();
+    expect(summaryRes.body.claim.claimId).toBe(createRes.body.claimId);
 
     const storedClaim = await Claim.findById(createRes.body.claimId).lean();
     if (storedClaim.status === 'REJECTED' || storedClaim.status === 'BLOCKED') {

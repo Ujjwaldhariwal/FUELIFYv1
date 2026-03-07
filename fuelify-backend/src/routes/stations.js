@@ -19,6 +19,8 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const DEFAULT_RADIUS_KM = 25;
 const MAX_LIMIT = 500;
+const DEFAULT_CLUSTER_LIMIT = 300;
+const MAX_CLUSTER_LIMIT = 1000;
 
 const toNumber = (value) => {
   const parsed = Number(value);
@@ -38,6 +40,16 @@ const parseBBox = (rawBbox) => {
   if (west >= east || south >= north) return null;
   if (west < -180 || east > 180 || south < -90 || north > 90) return null;
   return { west, south, east, north };
+};
+
+const getClusterStepDegrees = (zoom) => {
+  if (!Number.isFinite(zoom)) return 0.18;
+  if (zoom >= 12) return 0.035;
+  if (zoom >= 11) return 0.06;
+  if (zoom >= 10) return 0.1;
+  if (zoom >= 9) return 0.18;
+  if (zoom >= 8) return 0.32;
+  return 0.6;
 };
 
 const mapStationPayload = (station) => ({
@@ -208,6 +220,129 @@ router.get('/', async (req, res, next) => {
       limit,
       pages: Math.ceil(total / limit) || 1,
       queryMode,
+    };
+    await setCachedStations(cacheParams, payload);
+    return res.json(payload);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/stations/clusters?bbox=west,south,east,north&zoom=9&fuel=regular&limit=300
+router.get('/clusters', async (req, res, next) => {
+  try {
+    const bbox = parseBBox(req.query.bbox);
+    if (!bbox) {
+      return res.status(400).json({ error: 'bbox is required. Use west,south,east,north' });
+    }
+
+    const zoom = toNumber(req.query.zoom) ?? 9;
+    const fuel = typeof req.query.fuel === 'string' ? req.query.fuel : null;
+    const limit = Math.min(toPositiveInt(req.query.limit, DEFAULT_CLUSTER_LIMIT), MAX_CLUSTER_LIMIT);
+
+    if (fuel && !VALID_FUELS.includes(fuel)) {
+      return res.status(400).json({ error: 'Invalid fuel type' });
+    }
+
+    const stepDegrees = getClusterStepDegrees(zoom);
+    const cacheParams = {
+      queryMode: 'bbox_cluster',
+      bboxWest: bbox.west,
+      bboxSouth: bbox.south,
+      bboxEast: bbox.east,
+      bboxNorth: bbox.north,
+      zoom,
+      fuel,
+      page: 1,
+      limit,
+      state: null,
+      lat: null,
+      lng: null,
+      radiusKm: null,
+    };
+    const cached = await getCachedStations(cacheParams);
+    if (cached) return res.json(cached);
+
+    const fuelPath = fuel ? `$prices.${fuel}` : '$prices.regular';
+    const matchStage = {
+      coordinates: {
+        $geoWithin: {
+          $box: [
+            [bbox.west, bbox.south],
+            [bbox.east, bbox.north],
+          ],
+        },
+      },
+    };
+
+    const aggregate = await Station.aggregate([
+      { $match: matchStage },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          brand: 1,
+          status: 1,
+          lat: { $arrayElemAt: ['$coordinates.coordinates', 1] },
+          lng: { $arrayElemAt: ['$coordinates.coordinates', 0] },
+          fuelPrice: fuelPath,
+        },
+      },
+      {
+        $addFields: {
+          latBucket: { $floor: { $divide: ['$lat', stepDegrees] } },
+          lngBucket: { $floor: { $divide: ['$lng', stepDegrees] } },
+        },
+      },
+      {
+        $group: {
+          _id: { latBucket: '$latBucket', lngBucket: '$lngBucket' },
+          count: { $sum: 1 },
+          minPrice: { $min: '$fuelPrice' },
+          lat: { $avg: '$lat' },
+          lng: { $avg: '$lng' },
+          sampleStation: {
+            $first: {
+              _id: '$_id',
+              name: '$name',
+              brand: '$brand',
+              status: '$status',
+            },
+          },
+        },
+      },
+      { $sort: { count: -1 } },
+      {
+        $facet: {
+          clusters: [{ $limit: limit }],
+          meta: [{ $count: 'totalClusters' }],
+          totals: [{ $group: { _id: null, totalStations: { $sum: '$count' } } }],
+        },
+      },
+    ]);
+
+    const facet = aggregate[0] || { clusters: [], meta: [], totals: [] };
+    const totalClusters = facet.meta[0]?.totalClusters || 0;
+    const totalStations = facet.totals[0]?.totalStations || 0;
+    const clusters = (facet.clusters || []).map((cluster) => ({
+      clusterId: `${cluster._id.latBucket}:${cluster._id.lngBucket}`,
+      center: { lat: cluster.lat, lng: cluster.lng },
+      count: cluster.count,
+      minPrice: Number.isFinite(cluster.minPrice) ? Number(Number(cluster.minPrice).toFixed(3)) : null,
+      sampleStation: cluster.sampleStation,
+    }));
+
+    const payload = {
+      queryMode: 'bbox_cluster',
+      bbox,
+      zoom,
+      stepDegrees,
+      fuel,
+      limit,
+      totalClusters,
+      totalStations,
+      truncated: clusters.length < totalClusters,
+      clusters,
     };
     await setCachedStations(cacheParams, payload);
     return res.json(payload);

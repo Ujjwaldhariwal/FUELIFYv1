@@ -119,6 +119,36 @@ export interface ApiError {
 export interface StationsResponse {
   stations: Station[];
   total: number;
+  page?: number;
+  limit?: number;
+  pages?: number;
+  queryMode?: string;
+}
+
+export interface StationCluster {
+  clusterId: string;
+  center: { lat: number; lng: number };
+  count: number;
+  minPrice: number | null;
+  sampleStation?: {
+    _id: string;
+    name: string;
+    brand: StationBrand;
+    status: StationStatus;
+  };
+}
+
+export interface StationClustersResponse {
+  queryMode: 'bbox_cluster';
+  bbox: { west: number; south: number; east: number; north: number };
+  zoom: number;
+  stepDegrees: number;
+  fuel: FuelType | null;
+  limit: number;
+  totalClusters: number;
+  totalStations: number;
+  truncated: boolean;
+  clusters: StationCluster[];
 }
 
 export interface DashboardAnalytics {

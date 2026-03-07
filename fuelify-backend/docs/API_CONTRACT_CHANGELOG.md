@@ -24,6 +24,9 @@
   - `bbox=west,south,east,north`
   - optional `zoom`
   - response includes `queryMode: "bbox"` when bbox is used.
+- Added `GET /api/stations/clusters` for low-zoom aggregation:
+  - query: `bbox`, optional `zoom`, `fuel`, `limit`
+  - response: `clusters[]`, `totalClusters`, `totalStations`, `stepDegrees`, `truncated`
 
 ### Operational behavior
 - Added background risk rescoring monitor (enabled by default outside tests):

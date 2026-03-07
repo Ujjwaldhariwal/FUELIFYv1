@@ -2,10 +2,14 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Fuel, Locate, Search, Sun, Moon } from "lucide-react";
+import { Fuel, Locate, Search, Sun, Moon, Layers } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { FuelType, Station } from "@/types";
-import { fetchNearbyStations, fetchStationsByViewport } from "@/services/api";
+import type { FuelType, Station, StationCluster } from "@/types";
+import {
+  fetchNearbyStations,
+  fetchStationClustersByViewport,
+  fetchStationsByViewport,
+} from "@/services/api";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { StationListCard } from "@/components/ui/StationListCard";
 import { FuelChips } from "@/components/ui/FuelChips";
@@ -21,11 +25,24 @@ const MapView = dynamic(
 );
 
 const DEFAULT_CENTER: [number, number] = [40.4173, -82.9071];
-const DEFAULT_VIEWPORT_LIMIT = 300;
+const DEFAULT_VIEWPORT_LIMIT = 150;
+const DEFAULT_NEAR_LIMIT = 180;
+const PAGE_SIZE_LIST = 80;
 
 const toMiles = (distanceKm?: number) => {
   if (distanceKm === undefined) return null;
   return distanceKm * 0.621371;
+};
+
+const dedupeStations = (items: Station[]) => {
+  const seen = new Set<string>();
+  const out: Station[] = [];
+  for (const item of items) {
+    if (seen.has(item._id)) continue;
+    seen.add(item._id);
+    out.push(item);
+  }
+  return out;
 };
 
 export default function HomePage() {
@@ -33,18 +50,25 @@ export default function HomePage() {
   const { theme, toggleTheme } = useTheme();
 
   const [stations, setStations] = useState<Station[]>([]);
+  const [clusters, setClusters] = useState<StationCluster[]>([]);
   const [selectedFuel, setSelectedFuel] = useState<FuelType>("regular");
   const [center, setCenter] = useState<[number, number]>(DEFAULT_CENTER);
   const [selectedStationId, setSelectedStationId] = useState<string | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState("");
   const [sheetOpen, setSheetOpen] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [viewport, setViewport] = useState<MapViewportInfo | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [nearMeMode, setNearMeMode] = useState(true);
+  const [listPage, setListPage] = useState(1);
+  const [listPages, setListPages] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE_LIST);
 
   const inFlightControllerRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const lowZoomClusterMode = !nearMeMode && Boolean(viewport && viewport.zoom <= 9);
 
   const locateUser = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -70,13 +94,74 @@ export default function HomePage() {
     locateUser();
   }, [locateUser]);
 
+  const fetchListPage = useCallback(
+    async (page: number, append: boolean, signal?: AbortSignal) => {
+      if (nearMeMode && userLocation) {
+        const response = await fetchNearbyStations(
+          userLocation[0],
+          userLocation[1],
+          10,
+          selectedFuel,
+          DEFAULT_NEAR_LIMIT,
+          signal,
+        );
+        setListPages(response.pages || 1);
+        setListPage(page);
+        setStations((prev) => (append ? dedupeStations([...prev, ...response.stations]) : response.stations));
+        setClusters([]);
+        return;
+      }
+
+      if (viewport) {
+        if (lowZoomClusterMode && page === 1) {
+          const clusterResponse = await fetchStationClustersByViewport(
+            viewport.bounds,
+            selectedFuel,
+            viewport.zoom,
+            500,
+            signal,
+          );
+          setClusters(clusterResponse.clusters);
+        } else if (!lowZoomClusterMode) {
+          setClusters([]);
+        }
+
+        const response = await fetchStationsByViewport(
+          viewport.bounds,
+          selectedFuel,
+          DEFAULT_VIEWPORT_LIMIT,
+          viewport.zoom,
+          page,
+          signal,
+        );
+        setListPages(response.pages || 1);
+        setListPage(page);
+        setStations((prev) => (append ? dedupeStations([...prev, ...response.stations]) : response.stations));
+        return;
+      }
+
+      const fallback = await fetchNearbyStations(
+        center[0],
+        center[1],
+        25,
+        selectedFuel,
+        DEFAULT_VIEWPORT_LIMIT,
+        signal,
+      );
+      setListPages(fallback.pages || 1);
+      setListPage(page);
+      setStations((prev) => (append ? dedupeStations([...prev, ...fallback.stations]) : fallback.stations));
+      setClusters([]);
+    },
+    [center, lowZoomClusterMode, nearMeMode, selectedFuel, userLocation, viewport],
+  );
+
   useEffect(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-    if (inFlightControllerRef.current) {
-      inFlightControllerRef.current.abort();
-    }
+    setVisibleCount(PAGE_SIZE_LIST);
+    setListPage(1);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (inFlightControllerRef.current) inFlightControllerRef.current.abort();
 
     const controller = new AbortController();
     inFlightControllerRef.current = controller;
@@ -84,40 +169,7 @@ export default function HomePage() {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        if (nearMeMode && userLocation) {
-          const response = await fetchNearbyStations(
-            userLocation[0],
-            userLocation[1],
-            10,
-            selectedFuel,
-            DEFAULT_VIEWPORT_LIMIT,
-            controller.signal,
-          );
-          setStations(response.stations);
-          return;
-        }
-
-        if (viewport) {
-          const response = await fetchStationsByViewport(
-            viewport.bounds,
-            selectedFuel,
-            DEFAULT_VIEWPORT_LIMIT,
-            viewport.zoom,
-            controller.signal,
-          );
-          setStations(response.stations);
-          return;
-        }
-
-        const fallback = await fetchNearbyStations(
-          center[0],
-          center[1],
-          25,
-          selectedFuel,
-          DEFAULT_VIEWPORT_LIMIT,
-          controller.signal,
-        );
-        setStations(fallback.stations);
+        await fetchListPage(1, false, controller.signal);
       } catch (error: any) {
         if (error?.code !== "ERR_CANCELED") {
           console.error(error);
@@ -131,7 +183,19 @@ export default function HomePage() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       controller.abort();
     };
-  }, [center, nearMeMode, selectedFuel, userLocation, viewport]);
+  }, [fetchListPage]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || listPage >= listPages) return;
+    setLoadingMore(true);
+    try {
+      await fetchListPage(listPage + 1, true);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [fetchListPage, listPage, listPages, loadingMore]);
 
   const handleSearch = () => {
     if (searchQuery.trim().length < 2) return;
@@ -171,13 +235,15 @@ export default function HomePage() {
     setSelectedStationId(bestStation._id);
   };
 
+  const listStations = useMemo(() => stations.slice(0, visibleCount), [stations, visibleCount]);
+
   const renderStationList = () => (
     <div className="space-y-2 p-3">
       {loading
         ? Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="h-[88px] rounded-2xl skeleton-shimmer" />
           ))
-        : stations.map((station) => (
+        : listStations.map((station) => (
             <StationListCard
               key={station._id}
               station={station}
@@ -191,6 +257,33 @@ export default function HomePage() {
               }}
             />
           ))}
+
+      {!loading && listStations.length === 0 && (
+        <p className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-6 text-center text-sm text-[var(--text-secondary)]">
+          No stations found in this view. Pan map or tap locate.
+        </p>
+      )}
+
+      {!loading && listPage < listPages && (
+        <button
+          type="button"
+          onClick={handleLoadMore}
+          disabled={loadingMore}
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[var(--bg-elevated)] disabled:opacity-60"
+        >
+          {loadingMore ? "Loading..." : "Load more stations in this area"}
+        </button>
+      )}
+
+      {!loading && listStations.length < stations.length && (
+        <button
+          type="button"
+          onClick={() => setVisibleCount((prev) => Math.min(prev + PAGE_SIZE_LIST, stations.length))}
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[var(--bg-elevated)]"
+        >
+          Show more loaded stations
+        </button>
+      )}
     </div>
   );
 
@@ -216,6 +309,8 @@ export default function HomePage() {
       <div className="absolute inset-0 lg:left-[380px]">
         <MapView
           stations={stations}
+          clusters={clusters}
+          useServerClusters={lowZoomClusterMode}
           selectedFuel={selectedFuel}
           center={center}
           onStationSelect={(station) => {
@@ -288,9 +383,13 @@ export default function HomePage() {
           </div>
         </header>
 
-        <section className="pointer-events-auto mt-2">
-          <div className="rounded-2xl border border-[var(--border-strong)] p-1.5 glass shadow-[0_4px_20px_rgba(0,0,0,0.10)]">
+        <section className="pointer-events-auto mt-2 flex items-center gap-2">
+          <div className="rounded-2xl border border-[var(--border-strong)] p-1.5 glass shadow-[0_4px_20px_rgba(0,0,0,0.10)] flex-1">
             <FuelChips selected={selectedFuel} onSelect={setSelectedFuel} priceRanges={priceRanges} />
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+            <Layers className="h-3.5 w-3.5" />
+            {nearMeMode ? "Near me · 10km" : lowZoomClusterMode ? "Map view · Clustered" : "Map view"}
           </div>
         </section>
 
@@ -308,7 +407,7 @@ export default function HomePage() {
               "focus:outline-none",
             ].join(" ")}
           >
-            <span className="text-base leading-none">?</span>
+            <span className="text-base leading-none">↓</span>
             <span>
               Best <strong>${bestStation.prices[selectedFuel]!.toFixed(2)}</strong> · {bestStation.name}
               {bestStation.distanceKm !== undefined && (
@@ -349,4 +448,3 @@ export default function HomePage() {
     </main>
   );
 }
-

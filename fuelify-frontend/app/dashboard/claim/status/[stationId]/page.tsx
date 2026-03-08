@@ -95,6 +95,16 @@ export default function ClaimStatusPage() {
     return summary.claim.status === 'REJECTED' || summary.claim.status === 'BLOCKED';
   }, [summary]);
 
+  const claimMessage = useMemo(() => {
+    if (!summary?.claim) return null;
+    if (summary.claim.message) return summary.claim.message;
+    if (summary.claim.status === 'PENDING') return 'Verification is currently in progress.';
+    if (summary.claim.status === 'APPROVED') return 'Verification approved.';
+    if (summary.claim.status === 'REJECTED') return 'Verification was rejected. You can retry with updated evidence.';
+    if (summary.claim.status === 'BLOCKED') return 'Verification is blocked pending risk review.';
+    return 'Verification update available.';
+  }, [summary]);
+
   const handleRetry = async () => {
     if (!summary?.claim?.claimId) return;
     if (!businessName || !businessRegistrationId || !claimantName || !claimantEmail || !claimantPhone) {
@@ -151,7 +161,7 @@ export default function ClaimStatusPage() {
                 )}
                 {summary.claim.status}
               </div>
-              <p className="text-sm text-[var(--text-secondary)]">{summary.claim.message}</p>
+              <p className="text-sm text-[var(--text-secondary)]">{claimMessage}</p>
               {summary.claim.reasonCode && (
                 <p className="text-xs text-[var(--text-muted)]">Reason: {summary.claim.reasonCode}</p>
               )}

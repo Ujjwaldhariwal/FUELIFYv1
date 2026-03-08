@@ -165,3 +165,37 @@ npm run seed:dev:bypass
 - Owner stationId: `000000000000000000000102` (`CLAIMED`)
 - Owner login email: `owner+dev@fuelify.local`
 - Owner login password: `DevPass123!`
+
+## 10. Beta Data Bootstrap (for Manual QA)
+
+This prepares data quality and station pricing so map/search/claim flows are testable with realistic records.
+
+Dry run first:
+
+```powershell
+cd fuelify-backend
+npm run seed:beta:dry
+```
+
+Execute:
+
+```powershell
+cd fuelify-backend
+npm run seed:beta
+```
+
+Optional flags:
+
+- `--state=OH` (default)
+- `--skip-autofix` (only seed prices)
+- `--skip-prices` (only address autofix)
+- `--skip-reverse-geocode` (autofix only from Google Place details)
+- `--force-prices` (reseed prices even if present)
+- `--autofix-limit=250`
+- `--price-limit=2000`
+
+Example:
+
+```powershell
+node src/scripts/prepareBetaData.js --execute --state=OH --force-prices
+```

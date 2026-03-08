@@ -138,3 +138,30 @@ If using MongoDB Atlas, credentials must be valid for the target cluster/user.
 The prereq script now validates real connectivity/auth and will fail with:
 
 `MONGODB_URI connectivity/auth check failed.`
+
+## 9. Dev Bypass Fixtures (Claim + Owner UI Testing)
+
+Use this only for local/dev test runs.
+
+1. Enable OTP bypass in `fuelify-backend/.env`:
+
+```env
+OTP_BYPASS_ENABLED=true
+OTP_BYPASS_CODE=123456
+```
+
+2. Seed deterministic fixture data:
+
+```powershell
+cd fuelify-backend
+npm run seed:dev:bypass
+```
+
+3. Test accounts/IDs:
+
+- Claim test stationId: `000000000000000000000101` (`UNCLAIMED`)
+- Claim test phone: `+15550002222`
+- Claim OTP: `123456` (or value from `OTP_BYPASS_CODE`)
+- Owner stationId: `000000000000000000000102` (`CLAIMED`)
+- Owner login email: `owner+dev@fuelify.local`
+- Owner login password: `DevPass123!`

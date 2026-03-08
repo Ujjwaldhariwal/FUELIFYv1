@@ -154,7 +154,7 @@ export default function ClaimFlowPage() {
     }
   };
 
-  const stationBlocked = claimSummary?.risk.status === 'blocked';
+  const stationBlocked = claimSummary?.risk?.status === 'blocked';
   const stationAlreadyClaimed = station?.status !== 'UNCLAIMED';
   const cooldownUntil = claimSummary?.claim?.retryAt ? new Date(claimSummary.claim.retryAt) : null;
   const inCooldown = Boolean(cooldownUntil && cooldownUntil > new Date());

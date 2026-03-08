@@ -24,6 +24,8 @@ function ClaimLandingPageContent() {
     try {
       const { stations } = await searchStations(query, 'OH');
       setResults(stations.filter((station) => station.status === 'UNCLAIMED'));
+    } catch {
+      setResults([]);
     } finally {
       setLoading(false);
     }

@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Station = require('../models/Station');
 const Owner = require('../models/Owner');
-const { sendOtp, generateOtp, generateExpiry } = require('../services/otp');
+const { sendOtp, generateOtp, generateExpiry, isOtpBypassEnabled } = require('../services/otp');
 const { sendWelcomeEmail } = require('../services/email');
 const { otpLimiter, otpVerifyLimiter, loginLimiter } = require('../middleware/rateLimit');
 const { scheduleStationCacheInvalidation } = require('../services/stationCache');
@@ -75,7 +75,11 @@ router.post('/claim/initiate', otpLimiter, async (req, res, next) => {
     );
 
     await sendOtp(phone, otp);
-    return res.json({ success: true, message: 'OTP sent' });
+    return res.json({
+      success: true,
+      message: 'OTP sent',
+      ...(isOtpBypassEnabled() ? { devOtp: otp } : {}),
+    });
   } catch (err) {
     return next(err);
   }
@@ -240,7 +244,11 @@ router.post('/resend-otp', otpLimiter, async (req, res, next) => {
     await owner.save();
 
     await sendOtp(phone, otp);
-    return res.json({ success: true, message: 'New OTP sent' });
+    return res.json({
+      success: true,
+      message: 'New OTP sent',
+      ...(isOtpBypassEnabled() ? { devOtp: otp } : {}),
+    });
   } catch (err) {
     return next(err);
   }

@@ -173,19 +173,19 @@ export interface ClaimSummaryRisk {
 export interface ClaimSummaryClaim {
   claimId: string;
   status: ClaimStatus;
-  reasonCode: string | null;
-  message: string;
-  decisionConfidence: number;
-  sourceChecks: {
+  reasonCode?: string | null;
+  message?: string;
+  decisionConfidence?: number | null;
+  sourceChecks?: {
     googleMatch: boolean;
     osmMatch: boolean;
     stateRegistryMatch: boolean;
-  };
-  retryCount: number;
+  } | null;
+  retryCount?: number;
   retryAt: string | null;
   canRetry: boolean;
   slaEta: string | null;
-  decidedAt: string | null;
+  decidedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -193,7 +193,7 @@ export interface ClaimSummaryClaim {
 export interface StationClaimSummary {
   stationId: string;
   stationStatus: StationStatus;
-  risk: ClaimSummaryRisk;
+  risk?: ClaimSummaryRisk;
   claim: ClaimSummaryClaim | null;
   requestId: string;
 }

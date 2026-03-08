@@ -1,8 +1,17 @@
 // fuelify-backend/src/services/otp.js
 const twilio = require('twilio');
 
+const isOtpBypassEnabled = () =>
+  process.env.NODE_ENV !== 'production' && process.env.OTP_BYPASS_ENABLED === 'true';
+
+const getBypassOtp = () => process.env.OTP_BYPASS_CODE || '123456';
+
 // Returns: { success: true } or throws
 const sendOtp = async (phone, otp) => {
+  if (isOtpBypassEnabled()) {
+    return { success: true, bypass: true };
+  }
+
   // Normalize phone to E.164 format - assume US if no country code
   const normalized = phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`;
 
@@ -17,9 +26,14 @@ const sendOtp = async (phone, otp) => {
 };
 
 // Generates a 6-digit numeric OTP string
-const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+const generateOtp = () => {
+  if (isOtpBypassEnabled()) {
+    return getBypassOtp();
+  }
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 // Returns OTP expiry date (10 minutes from now)
 const generateExpiry = () => new Date(Date.now() + 10 * 60 * 1000);
 
-module.exports = { sendOtp, generateOtp, generateExpiry };
+module.exports = { sendOtp, generateOtp, generateExpiry, isOtpBypassEnabled };

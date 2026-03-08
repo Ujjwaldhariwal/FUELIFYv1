@@ -5,6 +5,7 @@ import type {
   ClaimStatus,
   DashboardAnalytics,
   Owner,
+  PriceDataMap,
   PriceHistoryEntry,
   Station,
   StationClustersResponse,
@@ -208,6 +209,32 @@ export const retryClaimVerification = async (
 
 export const getStationClaimSummary = async (stationId: string): Promise<StationClaimSummary> => {
   const { data } = await api.get(`/claims/station/${stationId}/summary`);
+  return data;
+};
+
+export const getPricesByStation = async (
+  stationId: string
+): Promise<{ stationId: string; prices: PriceDataMap }> => {
+  const { data } = await api.get(`/prices/${stationId}/latest`);
+  const prices = data?.prices || {};
+
+  return {
+    stationId: data.stationId,
+    prices: {
+      petrol: prices.petrol ? { ...prices.petrol, fuelType: 'petrol' } : null,
+      diesel: prices.diesel ? { ...prices.diesel, fuelType: 'diesel' } : null,
+      premium: prices.premium ? { ...prices.premium, fuelType: 'premium' } : null,
+      cng: prices.cng ? { ...prices.cng, fuelType: 'cng' } : null,
+      ev: prices.ev ? { ...prices.ev, fuelType: 'ev' } : null,
+    },
+  };
+};
+
+export const confirmPrice = async (
+  reportId: string,
+  fingerprint: string
+): Promise<{ confirmCount: number }> => {
+  const { data } = await api.post(`/prices/${reportId}/confirm`, { fingerprint });
   return data;
 };
 

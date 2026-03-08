@@ -14,6 +14,10 @@ const Station = require('../../src/models/Station');
 const Owner = require('../../src/models/Owner');
 const PriceHistory = require('../../src/models/PriceHistory');
 const Claim = require('../../src/models/Claim');
+const PriceReport = require('../../src/models/PriceReport');
+const pricesRouter = require('../../src/routes/prices');
+
+app.use('/api/prices', pricesRouter);
 
 let mongoServer;
 const TEST_DB_NAME = 'fuelify_integration_tests';
@@ -140,7 +144,13 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([Station.deleteMany({}), Owner.deleteMany({}), PriceHistory.deleteMany({}), Claim.deleteMany({})]);
+  await Promise.all([
+    Station.deleteMany({}),
+    Owner.deleteMany({}),
+    PriceHistory.deleteMany({}),
+    Claim.deleteMany({}),
+    PriceReport.deleteMany({}),
+  ]);
 });
 
 describe('Fuelify backend integration', () => {
@@ -625,5 +635,122 @@ describe('Fuelify backend integration', () => {
     } else {
       expect(stationAfter.status).toBe('CLAIMED');
     }
+  });
+
+  test('POST /api/prices creates report and returns expected shape', async () => {
+    const station = await makeStation({
+      name: 'Price Report Station',
+      slug: 'price-report-station-columbus-oh',
+      regular: 3.399,
+      status: 'UNCLAIMED',
+    });
+
+    const res = await request(app).post('/api/prices').send({
+      stationId: station._id.toString(),
+      fuelType: 'petrol',
+      price: 99.34,
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.reportId).toBeTruthy();
+    expect(res.body.stationId).toBe(station._id.toString());
+    expect(res.body.fuelType).toBe('petrol');
+    expect(res.body.price).toBeCloseTo(99.34, 3);
+    expect(res.body.reportedAt).toBeTruthy();
+  });
+
+  test('POST /api/prices with invalid fuelType returns 400', async () => {
+    const station = await makeStation({
+      name: 'Invalid Fuel Station',
+      slug: 'invalid-fuel-station-columbus-oh',
+      regular: 3.399,
+      status: 'UNCLAIMED',
+    });
+
+    const res = await request(app).post('/api/prices').send({
+      stationId: station._id.toString(),
+      fuelType: 'regular',
+      price: 88.11,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_FUEL_TYPE');
+  });
+
+  test('POST /api/prices/:reportId/confirm increments confirmCount', async () => {
+    const station = await makeStation({
+      name: 'Confirm Increment Station',
+      slug: 'confirm-increment-station-columbus-oh',
+      regular: 3.499,
+      status: 'UNCLAIMED',
+    });
+    const report = await PriceReport.create({
+      stationId: station._id,
+      fuelType: 'petrol',
+      price: 101.11,
+    });
+
+    const res = await request(app).post(`/api/prices/${report._id.toString()}/confirm`).send({
+      fingerprint: 'fingerprint-1',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.confirmCount).toBe(1);
+  });
+
+  test('POST /api/prices/:reportId/confirm same fingerprint twice keeps count unchanged', async () => {
+    const station = await makeStation({
+      name: 'Confirm Idempotent Station',
+      slug: 'confirm-idempotent-station-columbus-oh',
+      regular: 3.499,
+      status: 'UNCLAIMED',
+    });
+    const report = await PriceReport.create({
+      stationId: station._id,
+      fuelType: 'diesel',
+      price: 95.11,
+    });
+
+    const firstRes = await request(app).post(`/api/prices/${report._id.toString()}/confirm`).send({
+      fingerprint: 'fingerprint-repeat',
+    });
+    const secondRes = await request(app).post(`/api/prices/${report._id.toString()}/confirm`).send({
+      fingerprint: 'fingerprint-repeat',
+    });
+
+    expect(firstRes.status).toBe(200);
+    expect(secondRes.status).toBe(200);
+    expect(firstRes.body.confirmCount).toBe(1);
+    expect(secondRes.body.confirmCount).toBe(1);
+  });
+
+  test('GET /api/prices/:stationId/latest returns all 5 fuel types and null for unreported', async () => {
+    const station = await makeStation({
+      name: 'Latest Price Map Station',
+      slug: 'latest-price-map-station-columbus-oh',
+      regular: 3.199,
+      status: 'UNCLAIMED',
+    });
+
+    await PriceReport.create({
+      stationId: station._id,
+      fuelType: 'petrol',
+      price: 89.99,
+      confirmCount: 2,
+      reportedAt: new Date(),
+    });
+
+    const res = await request(app).get(`/api/prices/${station._id.toString()}/latest`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.stationId).toBe(station._id.toString());
+    expect(res.body.prices).toBeTruthy();
+    expect(res.body.prices.petrol).toBeTruthy();
+    expect(res.body.prices.petrol.price).toBeCloseTo(89.99, 3);
+    expect(res.body.prices.petrol.confirmCount).toBe(2);
+    expect(res.body.prices.diesel).toBeNull();
+    expect(res.body.prices.premium).toBeNull();
+    expect(res.body.prices.cng).toBeNull();
+    expect(res.body.prices.ev).toBeNull();
   });
 });

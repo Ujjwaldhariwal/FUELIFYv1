@@ -197,3 +197,15 @@ export interface StationClaimSummary {
   claim: ClaimSummaryClaim | null;
   requestId: string;
 }
+
+export interface PriceReport {
+  price: number;
+  reportedAt: string;
+  isStale: boolean;
+  confirmCount: number;
+  fuelType: 'petrol' | 'diesel' | 'premium' | 'cng' | 'ev';
+}
+
+export type PriceDataMap = {
+  [key in 'petrol' | 'diesel' | 'premium' | 'cng' | 'ev']: PriceReport | null;
+};

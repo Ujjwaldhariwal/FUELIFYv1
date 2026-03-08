@@ -5,6 +5,7 @@ const router = express.Router();
 const Station = require('../models/Station');
 const UserReport = require('../models/UserReport');
 const PriceHistory = require('../models/PriceHistory');
+const PriceReport = require('../models/PriceReport');
 const { reportLimiter } = require('../middleware/rateLimit');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
 const {
@@ -21,6 +22,8 @@ const DEFAULT_RADIUS_KM = 25;
 const MAX_LIMIT = 500;
 const DEFAULT_CLUSTER_LIMIT = 300;
 const MAX_CLUSTER_LIMIT = 1000;
+const PRICE_REPORT_FUELS = ['petrol', 'diesel', 'premium', 'cng', 'ev'];
+const STALE_HOURS = 6;
 
 const toNumber = (value) => {
   const parsed = Number(value);
@@ -68,6 +71,42 @@ const mapStationPayload = (station) => ({
     distanceKm: Number((station.distanceMeters / 1000).toFixed(2)),
   }),
 });
+
+const isPriceStale = (reportedAt) => {
+  if (!reportedAt) return true;
+  const reportedAtMs = new Date(reportedAt).getTime();
+  if (!Number.isFinite(reportedAtMs)) return true;
+  return Date.now() - reportedAtMs > STALE_HOURS * 60 * 60 * 1000;
+};
+
+const buildEmptyPriceData = () => ({
+  petrol: null,
+  diesel: null,
+  premium: null,
+  cng: null,
+  ev: null,
+});
+
+const getStationPriceData = async (stationId) => {
+  const priceData = buildEmptyPriceData();
+  const latestByFuel = await PriceReport.aggregate([
+    { $match: { stationId: stationId } },
+    { $sort: { fuelType: 1, reportedAt: -1 } },
+    { $group: { _id: '$fuelType', report: { $first: '$$ROOT' } } },
+  ]);
+
+  for (const entry of latestByFuel) {
+    if (!PRICE_REPORT_FUELS.includes(entry._id) || !entry.report) continue;
+    priceData[entry._id] = {
+      price: entry.report.price,
+      reportedAt: entry.report.reportedAt,
+      isStale: isPriceStale(entry.report.reportedAt),
+      confirmCount: entry.report.confirmCount || 0,
+    };
+  }
+
+  return priceData;
+};
 
 // GET /api/stations
 router.get('/', async (req, res, next) => {
@@ -382,7 +421,8 @@ router.get('/id/:id', validateObjectIdParam('id'), async (req, res, next) => {
   try {
     const station = await Station.findById(req.params.id).lean();
     if (!station) return res.status(404).json({ error: 'Station not found' });
-    return res.json({ station });
+    const priceData = await getStationPriceData(station._id);
+    return res.json({ station, priceData });
   } catch (err) {
     return next(err);
   }
@@ -400,8 +440,9 @@ router.get('/:slug', async (req, res, next) => {
     if (!station) return res.status(404).json({ error: 'Station not found' });
 
     const history = await PriceHistory.find({ stationId: station._id }).sort({ reportedAt: -1 }).limit(7).lean();
+    const priceData = await getStationPriceData(station._id);
 
-    return res.json({ station, priceHistory: history });
+    return res.json({ station, priceHistory: history, priceData });
   } catch (err) {
     return next(err);
   }

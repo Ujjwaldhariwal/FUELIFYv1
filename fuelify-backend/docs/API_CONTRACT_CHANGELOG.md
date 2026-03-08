@@ -64,3 +64,50 @@
   - `DOMAIN_EVENTS_CHANNEL` (default `fuelify:domain-events`)
   - `REDIS_URL` used when `DOMAIN_EVENTS_PROVIDER=redis`
   - On Redis failure, domain events degrade to in-process memory events automatically.
+
+## 2026-03-08 - Sprint 4 price staleness system
+
+## [POST] /api/prices
+### Request
+Body/Params: `{ stationId: string — MongoDB ObjectId of station, fuelType: "petrol"|"diesel"|"premium"|"cng"|"ev" — reported fuel, price: number — reported price (0 < price <= 999.99) }`
+
+### Response 200
+`{ reportId: string — created PriceReport id, stationId: string — station id, fuelType: string — submitted fuel type, price: number — stored normalized price, reportedAt: string — ISO timestamp }`
+
+### Errors
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `INVALID_STATION_ID` | `stationId` is missing or malformed |
+| 400 | `INVALID_FUEL_TYPE` | `fuelType` is outside supported enum |
+| 400 | `INVALID_PRICE` | `price` is missing, non-numeric, non-positive, or > 999.99 |
+| 404 | `STATION_NOT_FOUND` | station does not exist |
+| 429 | `RATE_LIMITED` | IP exceeds `priceLimiter` (5 requests / 10 minutes) |
+
+## [POST] /api/prices/:reportId/confirm
+### Request
+Body/Params: `{ reportId: string — PriceReport ObjectId path param, fingerprint: string — client fingerprint (required, max 64 chars) }`
+
+### Response 200
+`{ confirmCount: number — current total confirmations after idempotent update }`
+
+### Errors
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `INVALID_REPORT_ID` | `reportId` is malformed |
+| 400 | `INVALID_FINGERPRINT` | `fingerprint` missing/blank or > 64 chars |
+| 404 | `REPORT_NOT_FOUND` | target price report not found |
+| 409 | `CONFIRM_CAP_REACHED` | report already at confirm cap (`50`) |
+| 429 | `RATE_LIMITED` | IP exceeds `confirmLimiter` (10 requests / 10 minutes) |
+
+## [GET] /api/prices/:stationId/latest
+### Request
+Body/Params: `{ stationId: string — MongoDB ObjectId path param }`
+
+### Response 200
+`{ stationId: string — station id, prices: { petrol: { price, reportedAt, isStale, confirmCount } | null, diesel: { price, reportedAt, isStale, confirmCount } | null, premium: { price, reportedAt, isStale, confirmCount } | null, cng: { price, reportedAt, isStale, confirmCount } | null, ev: { price, reportedAt, isStale, confirmCount } | null } }`
+
+### Errors
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `INVALID_STATION_ID` | `stationId` is malformed |
+| 404 | `STATION_NOT_FOUND` | station does not exist |

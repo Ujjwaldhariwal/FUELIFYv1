@@ -46,4 +46,27 @@ const claimLimiter = rateLimit({
   message: { error: 'Too many claim attempts. Please try again later.' },
 });
 
-module.exports = { otpLimiter, apiLimiter, reportLimiter, loginLimiter, otpVerifyLimiter, claimLimiter };
+// Price report submit endpoint: 5 requests per IP per 10 minutes
+const priceLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many price submissions. Please try again later.' },
+});
+
+// Price confirm endpoint: 10 requests per IP per 10 minutes
+const confirmLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many confirmation attempts. Please try again later.' },
+});
+
+module.exports = {
+  otpLimiter,
+  apiLimiter,
+  reportLimiter,
+  loginLimiter,
+  otpVerifyLimiter,
+  claimLimiter,
+  priceLimiter,
+  confirmLimiter,
+};

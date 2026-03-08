@@ -1,5 +1,6 @@
 // fuelify-frontend/components/ui/PriceCard.tsx
-import type { FuelType } from '@/types';
+import type { FuelType, PriceReport } from '@/types';
+import { StalenessBadge } from '@/components/ui/StalenessBadge';
 
 interface PriceCardProps {
   fuelType: FuelType;
@@ -7,6 +8,7 @@ interface PriceCardProps {
   isSelected?: boolean;
   isLowest?: boolean;
   isFeatured?: boolean;
+  priceData?: PriceReport | null;
 }
 
 const LABELS: Record<FuelType, string> = {
@@ -17,30 +19,61 @@ const LABELS: Record<FuelType, string> = {
   e85: 'E85',
 };
 
+const REPORT_LABELS: Record<PriceReport['fuelType'], string> = {
+  petrol: 'Petrol',
+  diesel: 'Diesel',
+  premium: 'Premium',
+  cng: 'CNG',
+  ev: 'EV',
+};
+
 export const PriceCard = ({
   fuelType,
   price,
   isSelected = false,
   isLowest = false,
   isFeatured = false,
-}: PriceCardProps) => (
-  <div
-    className={[
-      'relative min-h-[92px] rounded-xl border p-3 transition-all duration-200',
-      isLowest
-        ? 'border-emerald-500 bg-emerald-500/10'
-        : isSelected
-          ? 'border-[var(--accent-blue)] bg-[var(--bg-elevated)]'
-          : 'border-[var(--border)] bg-[var(--bg-card)]',
-      isFeatured ? 'shadow-lg shadow-[color:rgb(59_130_246_/_0.2)]' : '',
-    ].join(' ')}
-  >
-    {isLowest && (
-      <span className="absolute right-2 top-2 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
-        🔥 Best
-      </span>
-    )}
-    <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">{LABELS[fuelType]}</p>
-    <p className="mt-2 text-2xl font-black text-[var(--text-primary)]">{price ? `$${price.toFixed(2)}` : '--'}</p>
-  </div>
-);
+  priceData,
+}: PriceCardProps) => {
+  const hasSupplementaryData = priceData !== undefined;
+  const displayedLabel = priceData ? REPORT_LABELS[priceData.fuelType] : LABELS[fuelType];
+  const displayedPrice = hasSupplementaryData ? priceData?.price : price;
+
+  return (
+    <div
+      className={[
+        'relative min-h-[92px] rounded-xl border p-3 transition-all duration-200',
+        isLowest
+          ? 'border-emerald-500 bg-emerald-500/10'
+          : isSelected
+            ? 'border-[var(--accent-blue)] bg-[var(--bg-elevated)]'
+            : 'border-[var(--border)] bg-[var(--bg-card)]',
+        isFeatured ? 'shadow-lg shadow-[color:rgb(59_130_246_/_0.2)]' : '',
+      ].join(' ')}
+    >
+      {isLowest && (
+        <span className="absolute right-2 top-2 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+          🔥 Best
+        </span>
+      )}
+      <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">{displayedLabel}</p>
+
+      {hasSupplementaryData && (displayedPrice === null || displayedPrice === undefined) ? (
+        <p className="mt-2 text-base font-semibold text-[var(--color-text-muted,var(--text-muted))]">Not reported</p>
+      ) : (
+        <p className="mt-2 text-2xl font-black text-[var(--text-primary)]">
+          {displayedPrice ? `$${displayedPrice.toFixed(2)}` : '--'}
+        </p>
+      )}
+
+      {hasSupplementaryData && (
+        <div className="mt-2 space-y-1">
+          <StalenessBadge reportedAt={priceData?.reportedAt || null} isStale={priceData?.isStale ?? true} />
+          <p className="text-xs text-[var(--color-text-muted,var(--text-muted))]">
+            {priceData?.confirmCount ?? 0} people confirmed
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};

@@ -237,11 +237,6 @@ export const MapView = ({
       emitViewport();
     });
 
-    map.on('zoomend', () => {
-      setZoomLevel(map.getZoom());
-      emitViewport();
-    });
-
     map.on('dragstart', () => onMapInteraction?.());
     map.on('zoomstart', () => onMapInteraction?.());
 

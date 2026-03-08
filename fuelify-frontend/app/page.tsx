@@ -28,6 +28,8 @@ const DEFAULT_CENTER: [number, number] = [40.4173, -82.9071];
 const DEFAULT_VIEWPORT_LIMIT = 150;
 const DEFAULT_NEAR_LIMIT = 180;
 const PAGE_SIZE_LIST = 80;
+const DEFAULT_NEAR_RADIUS_KM = 10;
+const FALLBACK_NEAR_RADIUS_KM = 25;
 
 const toMiles = (distanceKm?: number) => {
   if (distanceKm === undefined) return null;
@@ -100,11 +102,32 @@ export default function HomePage() {
         const response = await fetchNearbyStations(
           userLocation[0],
           userLocation[1],
-          10,
+          DEFAULT_NEAR_RADIUS_KM,
           selectedFuel,
           DEFAULT_NEAR_LIMIT,
           signal,
         );
+
+        // If no nearby coverage exists for current user location, fall back to seeded Ohio data.
+        if ((response.total || 0) === 0) {
+          const fallback = await fetchNearbyStations(
+            DEFAULT_CENTER[0],
+            DEFAULT_CENTER[1],
+            FALLBACK_NEAR_RADIUS_KM,
+            selectedFuel,
+            DEFAULT_VIEWPORT_LIMIT,
+            signal,
+          );
+          setNearMeMode(false);
+          setViewport(null);
+          setCenter(DEFAULT_CENTER);
+          setListPages(fallback.pages || 1);
+          setListPage(1);
+          setStations(fallback.stations);
+          setClusters([]);
+          return;
+        }
+
         setListPages(response.pages || 1);
         setListPage(page);
         setStations((prev) => (append ? dedupeStations([...prev, ...response.stations]) : response.stations));

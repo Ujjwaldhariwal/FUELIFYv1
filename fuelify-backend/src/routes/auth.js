@@ -19,11 +19,18 @@ const signToken = (ownerId) => jwt.sign({ id: ownerId }, process.env.JWT_SECRET,
 router.post('/claim/initiate', otpLimiter, async (req, res, next) => {
   try {
     const { stationId, phone } = req.body;
+
     if (!stationId || !phone) {
       return res.status(400).json({ error: 'stationId and phone required' });
     }
     if (!mongoose.Types.ObjectId.isValid(stationId)) {
       return res.status(400).json({ error: 'Invalid stationId' });
+    }
+
+    // FIX A — phone format validation
+    const phoneDigits = String(phone).replace(/\D/g, '');
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      return res.status(400).json({ error: 'Invalid phone format' });
     }
 
     const station = await Station.findById(stationId);
@@ -32,6 +39,7 @@ router.post('/claim/initiate', otpLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'Station claims are temporarily blocked' });
     }
 
+    // FIX 1 (from sprint security pass) — verified owner lockout prevention
     const existingOwner = await Owner.findOne({ phone });
     if (existingOwner?.isVerified && existingOwner.stationId.toString() === stationId) {
       return res.status(409).json({
@@ -90,9 +98,18 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
+    // FIX 4 (from sprint security pass) — email format validation early
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
     const owner = await Owner.findOne({ phone, stationId });
     if (!owner) return res.status(404).json({ error: 'No pending claim found for this phone' });
-    const stationBeforeVerify = await Station.findById(stationId).select('riskStatus').lean();
+
+    const stationBeforeVerify = await Station.findById(stationId)
+      .select('riskStatus status claimedBy')
+      .lean();
     if (!stationBeforeVerify) return res.status(404).json({ error: 'Station not found' });
     if (stationBeforeVerify.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station claims are currently blocked' });
@@ -106,6 +123,15 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
       return res.status(410).json({ error: 'OTP expired. Please request a new one.' });
     }
 
+    // FIX B — race condition guard: station claimed by someone else after OTP was issued
+    if (
+      (stationBeforeVerify.status === 'CLAIMED' || stationBeforeVerify.status === 'VERIFIED') &&
+      stationBeforeVerify.claimedBy &&
+      stationBeforeVerify.claimedBy.toString() !== owner._id.toString()
+    ) {
+      return res.status(409).json({ error: 'Station was claimed by another user' });
+    }
+
     const otpMatch = await bcrypt.compare(otp, owner.verificationOtp);
     if (!otpMatch) {
       owner.otpFailureCount = (owner.otpFailureCount || 0) + 1;
@@ -117,12 +143,8 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
     owner.name = name;
-    owner.email = email;
+    owner.email = email.toLowerCase(); // FIX C — normalize email to lowercase
     owner.passwordHash = passwordHash;
     owner.isVerified = true;
     owner.verificationOtp = null;
@@ -136,12 +158,19 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
       { status: 'CLAIMED', claimedBy: owner._id, claimedAt: new Date() },
       { new: true }
     );
-    await scheduleStationCacheInvalidation({ reason: 'CLAIM_ACCOUNT_VERIFIED', stationId: stationId.toString() });
+    await scheduleStationCacheInvalidation({
+      reason: 'CLAIM_ACCOUNT_VERIFIED',
+      stationId: stationId.toString(),
+    });
 
-    sendWelcomeEmail(email, name, station.name).catch(console.error);
+    sendWelcomeEmail(owner.email, name, station.name).catch(console.error);
 
     const token = signToken(owner._id);
-    return res.json({ token, owner: { id: owner._id, name, email, role: owner.role }, station });
+    return res.json({
+      token,
+      owner: { id: owner._id, name, email: owner.email, role: owner.role },
+      station,
+    });
   } catch (err) {
     return next(err);
   }

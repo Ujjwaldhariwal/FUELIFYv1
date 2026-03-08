@@ -75,10 +75,41 @@ router.patch('/stations/:id/verify', validateObjectIdParam('id'), async (req, re
 });
 
 // POST /api/admin/seed
+// POST /api/admin/seed
 router.post('/seed', async (req, res) => {
-  // PHASE 2 - stub
-  // TODO: integrate with placesAPI.js grid search and Station.insertMany with deduplication
-  return res.json({ message: 'Seed endpoint stub. Use scripts/seedOhio.js CLI for full seed.' });
+  if (!process.env.GOOGLE_PLACES_API_KEY) {
+    return res.status(503).json({
+      error: 'GOOGLE_PLACES_API_KEY is not configured. Seed endpoint requires a valid API key.',
+    });
+  }
+
+  const { dryRun = false, stepKm = 50, bounds } = req.body;
+
+  if (dryRun) {
+    // Dry-run: compute grid scan count without hitting Places API
+    const defaultBounds = bounds || { west: -84.8, south: 38.4, east: -80.5, north: 42.3 };
+    const lngRange = Math.abs(defaultBounds.east - defaultBounds.west);
+    const latRange = Math.abs(defaultBounds.north - defaultBounds.south);
+    const kmPerDeg = 111;
+    const cols = Math.ceil((lngRange * kmPerDeg) / stepKm);
+    const rows = Math.ceil((latRange * kmPerDeg) / stepKm);
+    const scannedPoints = cols * rows;
+
+    return res.json({
+      mode: 'DRY_RUN',
+      scannedPoints,
+      discoveredPlaces: 0,
+      wouldInsert: 0,
+      stepKm,
+      bounds: defaultBounds,
+    });
+  }
+
+  // Full seed — not yet implemented
+  return res.status(501).json({
+    error: 'Full seed not yet implemented. Use scripts/seedOhio.js CLI.',
+  });
 });
+
 
 module.exports = router;

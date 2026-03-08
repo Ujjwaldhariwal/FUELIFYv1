@@ -1,5 +1,11 @@
 // fuelify-backend/src/services/email.js
+// fuelify-backend/src/services/email.js
 const nodemailer = require('nodemailer');
+
+const isSmtpConfigured = () => {
+  const host = process.env.SMTP_HOST;
+  return Boolean(host && host.length > 0 && host !== 'placeholder');
+};
 
 const createTransport = () =>
   nodemailer.createTransport({
@@ -10,10 +16,10 @@ const createTransport = () =>
   });
 
 const sendWelcomeEmail = async (to, ownerName, stationName) => {
+  if (!isSmtpConfigured()) return;
   const transporter = createTransport();
-
   await transporter.sendMail({
-    from: `"Fuelify" <${process.env.SMTP_USER}>`,
+    from: `"Fuelify" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
     to,
     subject: `You've claimed ${stationName} on Fuelify!`,
     html: `
@@ -26,10 +32,10 @@ const sendWelcomeEmail = async (to, ownerName, stationName) => {
 };
 
 const sendPriceUpdateAlert = async (to, stationName, prices) => {
+  if (!isSmtpConfigured()) return;
   const transporter = createTransport();
-
   await transporter.sendMail({
-    from: `"Fuelify" <${process.env.SMTP_USER}>`,
+    from: `"Fuelify" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
     to,
     subject: `Price update confirmed - ${stationName}`,
     html: `

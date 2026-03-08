@@ -1,3 +1,5 @@
+//fuelify-backend/tests/integration/api.integration.test.js
+
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_1234567890';
 process.env.ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'test_admin_secret_1234567890';
@@ -124,6 +126,20 @@ const loginAsOwner = async ({ identifier, password = 'DevPass123!' }) => {
   expect(loginRes.body.token).toBeTruthy();
   return loginRes.body.token;
 };
+
+const makeAdminOwner = async () => {
+  const passwordHash = await bcrypt.hash('AdminPass123!', 12);
+  return Owner.create({
+    stationId: new mongoose.Types.ObjectId(),
+    name: 'Test Admin',
+    email: 'admin.test@fuelify.local',
+    phone: '+15550000099',
+    passwordHash,
+    role: 'ADMIN',
+    isVerified: true,
+  });
+};
+
 
 beforeAll(async () => {
   const externalUri = process.env.TEST_MONGODB_URI || process.env.MONGODB_URI;
@@ -753,4 +769,144 @@ describe('Fuelify backend integration', () => {
     expect(res.body.prices.cng).toBeNull();
     expect(res.body.prices.ev).toBeNull();
   });
+
+  test('POST /api/auth/login supports phone identifier login', async () => {
+    const station = await makeStation({
+      name: 'Phone Login Station',
+      slug: 'phone-login-station-columbus-oh',
+      regular: 3.499,
+    });
+    await makeVerifiedOwner({
+      stationId: station._id,
+      email: 'owner.phonelogin@fuelify.local',
+      phone: '+15559990001',
+      password: 'DevPass123!',
+    });
+    const res = await request(app).post('/api/auth/login').send({
+      identifier: '+15559990001',
+      password: 'DevPass123!',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBeTruthy();
+    expect(res.body.owner).toBeTruthy();
+  });
+
+  test('POST /api/auth/claim/initiate rejects invalid phone format', async () => {
+    const station = await makeStation({
+      name: 'Phone Format Station',
+      slug: 'phone-format-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+    const res = await request(app).post('/api/auth/claim/initiate').send({
+      stationId: station._id.toString(),
+      phone: 'not-a-phone',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid phone/i);
+  });
+
+  test('POST /api/auth/claim/verify prevents claim takeover if station was claimed after OTP issuance', async () => {
+    const station = await makeStation({
+      name: 'Race Condition Station',
+      slug: 'race-condition-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+    await makePendingOwner({
+      stationId: station._id,
+      email: 'pending.race@fuelify.local',
+      phone: '+15559990002',
+      otp: '654321',
+    });
+    const otherOwner = await Owner.create({
+      stationId: station._id,
+      name: 'Other Owner',
+      email: 'other.owner.race@fuelify.local',
+      phone: '+15559990003',
+      passwordHash: await bcrypt.hash('DevPass123!', 12),
+      role: 'OWNER',
+      isVerified: true,
+    });
+    await Station.findByIdAndUpdate(station._id, {
+      status: 'CLAIMED',
+      claimedBy: otherOwner._id,
+    });
+    const res = await request(app).post('/api/auth/claim/verify').send({
+      stationId: station._id.toString(),
+      phone: '+15559990002',
+      otp: '654321',
+      name: 'Race Owner',
+      email: 'race@fuelify.local',
+      password: 'DevPass123!',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/claimed/i);
+  });
+
+  test('POST /api/auth/claim/verify normalizes email to lowercase for consistent login', async () => {
+    const station = await makeStation({
+      name: 'Email Normalize Station',
+      slug: 'email-normalize-station-columbus-oh',
+      regular: null,
+      status: 'UNCLAIMED',
+    });
+    await makePendingOwner({
+      stationId: station._id,
+      email: 'pending.normalize@fuelify.local',
+      phone: '+15559990004',
+      otp: '111222',
+    });
+    const verifyRes = await request(app).post('/api/auth/claim/verify').send({
+      stationId: station._id.toString(),
+      phone: '+15559990004',
+      otp: '111222',
+      name: 'Normalize Owner',
+      email: 'Normalize.Owner@Fuelify.LOCAL',
+      password: 'DevPass123!',
+    });
+    expect(verifyRes.status).toBe(200);
+    const loginRes = await request(app).post('/api/auth/login').send({
+      identifier: 'normalize.owner@fuelify.local',
+      password: 'DevPass123!',
+    });
+    expect(loginRes.status).toBe(200);
+    expect(loginRes.body.token).toBeTruthy();
+  });
+
+  test('POST /api/admin/seed returns 503 when GOOGLE_PLACES_API_KEY is missing', async () => {
+    const admin = await makeAdminOwner();
+    const token = await loginAsOwner({ identifier: admin.email, password: 'AdminPass123!' });
+    const savedKey = process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    const res = await request(app)
+      .post('/api/admin/seed')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ dryRun: true });
+    process.env.GOOGLE_PLACES_API_KEY = savedKey || '';
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/GOOGLE_PLACES_API_KEY/i);
+  });
+
+  test('POST /api/admin/seed dry-run returns summary shape when API key is set', async () => {
+    const admin = await makeAdminOwner();
+    const token = await loginAsOwner({ identifier: admin.email, password: 'AdminPass123!' });
+    const savedKey = process.env.GOOGLE_PLACES_API_KEY;
+    process.env.GOOGLE_PLACES_API_KEY = 'test-placeholder-key';
+    const res = await request(app)
+      .post('/api/admin/seed')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        dryRun: true,
+        stepKm: 100,
+        bounds: { west: -83, south: 39.8, east: -82.8, north: 40.1 },
+      });
+    process.env.GOOGLE_PLACES_API_KEY = savedKey || '';
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe('DRY_RUN');
+    expect(typeof res.body.discoveredPlaces).toBe('number');
+    expect(typeof res.body.wouldInsert).toBe('number');
+    expect(typeof res.body.scannedPoints).toBe('number');
+  });
 });
+

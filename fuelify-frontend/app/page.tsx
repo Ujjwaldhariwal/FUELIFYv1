@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Fuel, Locate, Search, Sun, Moon, Layers } from "lucide-react";
+import { Fuel, Locate, Search, Sun, Moon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { FuelType, Station, StationCluster } from "@/types";
 import {
@@ -13,6 +13,7 @@ import {
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { StationListCard } from "@/components/ui/StationListCard";
 import { FuelChips } from "@/components/ui/FuelChips";
+import { ModeChip } from "@/components/ui/ModeChip";
 import { useTheme } from "@/components/theme/ThemeContext";
 import type { MapViewportInfo } from "@/components/map/MapView";
 
@@ -225,6 +226,21 @@ export default function HomePage() {
     router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}&state=OH`);
   };
 
+  const handleModeToggle = useCallback(() => {
+    if (nearMeMode) {
+      setNearMeMode(false);
+      return;
+    }
+
+    if (userLocation) {
+      setCenter(userLocation);
+      setNearMeMode(true);
+      return;
+    }
+
+    locateUser();
+  }, [locateUser, nearMeMode, userLocation]);
+
   const bestStation = useMemo(() => {
     return stations
       .filter((s) => s.prices?.[selectedFuel] !== null && s.prices?.[selectedFuel] !== undefined)
@@ -410,10 +426,7 @@ export default function HomePage() {
           <div className="rounded-2xl border border-[var(--border-strong)] p-1.5 glass shadow-[0_4px_20px_rgba(0,0,0,0.10)] flex-1">
             <FuelChips selected={selectedFuel} onSelect={setSelectedFuel} priceRanges={priceRanges} />
           </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
-            <Layers className="h-3.5 w-3.5" />
-            {nearMeMode ? "Near me · 10km" : lowZoomClusterMode ? "Map view · Clustered" : "Map view"}
-          </div>
+          <ModeChip mode={nearMeMode ? "nearby" : "mapview"} onToggle={handleModeToggle} />
         </section>
 
         {bestStation && bestStation.prices[selectedFuel] && (

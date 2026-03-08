@@ -154,9 +154,17 @@ export default function ClaimFlowPage() {
     }
   };
 
-  const stationBlocked = claimSummary?.risk?.status === 'blocked';
-  const stationIdentityIncomplete = !station?.address?.street || !station?.address?.city;
-  const stationAlreadyClaimed = station?.status !== 'UNCLAIMED';
+  const claimEligibility = station?.claimEligibility;
+  const stationBlocked =
+    claimSummary?.risk?.status === 'blocked' ||
+    claimEligibility?.reasons?.includes('RISK_BLOCKED') === true;
+  const stationIdentityIncomplete =
+    claimEligibility?.hasCompleteAddress === false || !station?.address?.street || !station?.address?.city;
+  const stationAlreadyClaimed =
+    claimEligibility?.reasons?.includes('ALREADY_CLAIMED') === true || station?.status !== 'UNCLAIMED';
+  const stationAddressLine =
+    [station?.address?.street, station?.address?.city, station?.address?.state].filter(Boolean).join(', ') ||
+    'Address unavailable';
   const cooldownUntil = claimSummary?.claim?.retryAt ? new Date(claimSummary.claim.retryAt) : null;
   const inCooldown = Boolean(cooldownUntil && cooldownUntil > new Date());
 
@@ -226,9 +234,7 @@ export default function ClaimFlowPage() {
                 <BrandLogo brand={station.brand} size={48} />
                 <div>
                   <p className="font-semibold text-[var(--text-primary)]">{station.name}</p>
-                  <p className="text-sm text-[var(--text-secondary)]">
-                    {station.address.street}, {station.address.city}, {station.address.state}
-                  </p>
+                  <p className="text-sm text-[var(--text-secondary)]">{stationAddressLine}</p>
                 </div>
               </div>
 

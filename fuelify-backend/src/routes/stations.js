@@ -29,6 +29,29 @@ const COMPLETE_ADDRESS_FILTER = {
   'address.city': { $type: 'string', $ne: '' },
 };
 
+const hasCompleteAddress = (station) =>
+  Boolean(
+    typeof station?.address?.street === 'string' &&
+      station.address.street.trim() &&
+      typeof station?.address?.city === 'string' &&
+      station.address.city.trim()
+  );
+
+const getClaimEligibility = (station) => {
+  const reasons = [];
+  if (!hasCompleteAddress(station)) reasons.push('INCOMPLETE_ADDRESS');
+  if (station?.status && station.status !== 'UNCLAIMED') reasons.push('ALREADY_CLAIMED');
+  if (station?.riskStatus === 'blocked') reasons.push('RISK_BLOCKED');
+
+  return {
+    canClaim: reasons.length === 0,
+    reasons,
+    hasCompleteAddress: hasCompleteAddress(station),
+    stationStatus: station?.status || 'UNCLAIMED',
+    riskStatus: station?.riskStatus || 'clean',
+  };
+};
+
 const toNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -70,6 +93,7 @@ const mapStationPayload = (station) => ({
   prices: station.prices,
   status: station.status,
   services: station.services,
+  claimEligibility: getClaimEligibility(station),
   lastUpdated: station.prices?.lastUpdated || null,
   ...(station.distanceMeters !== undefined && {
     distanceKm: Number((station.distanceMeters / 1000).toFixed(2)),
@@ -431,7 +455,7 @@ router.get('/id/:id', validateObjectIdParam('id'), async (req, res, next) => {
     const station = await Station.findById(req.params.id).lean();
     if (!station) return res.status(404).json({ error: 'Station not found' });
     const priceData = await getStationPriceData(station._id);
-    return res.json({ station, priceData });
+    return res.json({ station: { ...station, claimEligibility: getClaimEligibility(station) }, priceData });
   } catch (err) {
     return next(err);
   }
@@ -451,7 +475,11 @@ router.get('/:slug', async (req, res, next) => {
     const history = await PriceHistory.find({ stationId: station._id }).sort({ reportedAt: -1 }).limit(7).lean();
     const priceData = await getStationPriceData(station._id);
 
-    return res.json({ station, priceHistory: history, priceData });
+    return res.json({
+      station: { ...station, claimEligibility: getClaimEligibility(station) },
+      priceHistory: history,
+      priceData,
+    });
   } catch (err) {
     return next(err);
   }

@@ -165,3 +165,17 @@ npm run seed:dev:bypass
 - Owner stationId: `000000000000000000000102` (`CLAIMED`)
 - Owner login email: `owner+dev@fuelify.local`
 - Owner login password: `DevPass123!`
+
+## 10. Local Geolocation Testing
+
+If your real device/browser location is outside seeded coverage, the home map can show zero stations.
+
+For local testing in Chrome:
+
+1. Open DevTools (`F12`) -> `More tools` -> `Sensors`.
+2. Set `Location` to a custom profile near Ohio data, for example:
+   - Latitude: `40.4173`
+   - Longitude: `-82.9071`
+3. Refresh `http://localhost:3000`.
+
+In local development (`NODE_ENV=development`), Fuelify also applies an Ohio fallback automatically when the active area has zero seeded stations.

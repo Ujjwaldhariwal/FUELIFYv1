@@ -173,6 +173,7 @@ export const MapView = ({
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const initRef = useRef(false);
   const suppressNextMoveRef = useRef(false);
+  const appliedThemeRef = useRef<'light' | 'dark'>(theme || 'dark');
   const [zoomLevel, setZoomLevel] = useState(initialZoom);
 
   const displayPoints = useMemo(
@@ -254,7 +255,10 @@ export const MapView = ({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(TILE_STYLES[theme || 'dark']);
+    const nextTheme = theme || 'dark';
+    if (appliedThemeRef.current === nextTheme) return;
+    appliedThemeRef.current = nextTheme;
+    map.setStyle(TILE_STYLES[nextTheme]);
   }, [theme]);
 
   useEffect(() => {

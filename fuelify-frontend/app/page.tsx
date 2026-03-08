@@ -1,4 +1,5 @@
-﻿"use client";
+﻿//fuelify-frontend/app/page.tsx
+"use client";
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +33,19 @@ const PAGE_SIZE_LIST = 80;
 const DEFAULT_NEAR_RADIUS_KM = 10;
 const FALLBACK_NEAR_RADIUS_KM = 25;
 
+// ─── DEV LOCATION OVERRIDE ───────────────────────────────────────────────────
+// Set NEXT_PUBLIC_DEV_LAT and NEXT_PUBLIC_DEV_LNG in .env.local to skip
+// geolocation entirely during local development (e.g. when location is blocked).
+const DEV_LAT = process.env.NEXT_PUBLIC_DEV_LAT
+  ? parseFloat(process.env.NEXT_PUBLIC_DEV_LAT)
+  : null;
+const DEV_LNG = process.env.NEXT_PUBLIC_DEV_LNG
+  ? parseFloat(process.env.NEXT_PUBLIC_DEV_LNG)
+  : null;
+const DEV_LOCATION: [number, number] | null =
+  DEV_LAT !== null && DEV_LNG !== null ? [DEV_LAT, DEV_LNG] : null;
+// ─────────────────────────────────────────────────────────────────────────────
+
 const toMiles = (distanceKm?: number) => {
   if (distanceKm === undefined) return null;
   return distanceKm * 0.621371;
@@ -55,26 +69,49 @@ export default function HomePage() {
   const [stations, setStations] = useState<Station[]>([]);
   const [clusters, setClusters] = useState<StationCluster[]>([]);
   const [selectedFuel, setSelectedFuel] = useState<FuelType>("regular");
-  const [center, setCenter] = useState<[number, number]>(DEFAULT_CENTER);
-  const [selectedStationId, setSelectedStationId] = useState<string | undefined>(undefined);
+  const [center, setCenter] = useState<[number, number]>(
+    DEV_LOCATION ?? DEFAULT_CENTER,
+  );
+  const [selectedStationId, setSelectedStationId] = useState<
+    string | undefined
+  >(undefined);
   const [searchQuery, setSearchQuery] = useState("");
   const [sheetOpen, setSheetOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [viewport, setViewport] = useState<MapViewportInfo | null>(null);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(
+    DEV_LOCATION,
+  );
   const [nearMeMode, setNearMeMode] = useState(true);
   const [listPage, setListPage] = useState(1);
   const [listPages, setListPages] = useState(1);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE_LIST);
 
+  // ─── FLICKER FIX: geolocation runs exactly once ──────────────────────────
+  const locationFetchedRef = useRef(false);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const inFlightControllerRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const lowZoomClusterMode = !nearMeMode && Boolean(viewport && viewport.zoom <= 9);
+  const lowZoomClusterMode =
+    !nearMeMode && Boolean(viewport && viewport.zoom <= 9);
 
   const locateUser = useCallback(() => {
-    if (!navigator.geolocation) return;
+    // If dev override is active, skip geolocation entirely
+    if (DEV_LOCATION) {
+      setUserLocation(DEV_LOCATION);
+      setCenter(DEV_LOCATION);
+      setNearMeMode(true);
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setNearMeMode(false);
+      return;
+    }
+
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const next: [number, number] = [coords.latitude, coords.longitude];
@@ -83,19 +120,25 @@ export default function HomePage() {
         setNearMeMode(true);
       },
       () => {
+        // Geolocation denied or unavailable — fall back to map view
+        // Do NOT call locateUser again from here
         setNearMeMode(false);
       },
       {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 5 * 60 * 1000,
+        enableHighAccuracy: false,   // faster, less battery drain
+        timeout: 8000,
+        maximumAge: 30 * 60 * 1000, // cache for 30 min — prevents re-requests
       },
     );
   }, []);
 
+  // ─── Run geolocation ONCE on mount only ──────────────────────────────────
   useEffect(() => {
+    if (locationFetchedRef.current) return;
+    locationFetchedRef.current = true;
     locateUser();
-  }, [locateUser]);
+  }, []); // empty deps — intentionally runs once
+  // ─────────────────────────────────────────────────────────────────────────
 
   const fetchListPage = useCallback(
     async (page: number, append: boolean, signal?: AbortSignal) => {
@@ -109,7 +152,6 @@ export default function HomePage() {
           signal,
         );
 
-        // If no nearby coverage exists for current user location, fall back to seeded Ohio data.
         if ((response.total || 0) === 0) {
           const fallback = await fetchNearbyStations(
             DEFAULT_CENTER[0],
@@ -119,6 +161,7 @@ export default function HomePage() {
             DEFAULT_VIEWPORT_LIMIT,
             signal,
           );
+          // Batch all fallback state into one update to prevent multiple renders
           setNearMeMode(false);
           setViewport(null);
           setCenter(DEFAULT_CENTER);
@@ -131,7 +174,11 @@ export default function HomePage() {
 
         setListPages(response.pages || 1);
         setListPage(page);
-        setStations((prev) => (append ? dedupeStations([...prev, ...response.stations]) : response.stations));
+        setStations((prev) =>
+          append
+            ? dedupeStations([...prev, ...response.stations])
+            : response.stations,
+        );
         setClusters([]);
         return;
       }
@@ -160,7 +207,11 @@ export default function HomePage() {
         );
         setListPages(response.pages || 1);
         setListPage(page);
-        setStations((prev) => (append ? dedupeStations([...prev, ...response.stations]) : response.stations));
+        setStations((prev) =>
+          append
+            ? dedupeStations([...prev, ...response.stations])
+            : response.stations,
+        );
         return;
       }
 
@@ -174,7 +225,11 @@ export default function HomePage() {
       );
       setListPages(fallback.pages || 1);
       setListPage(page);
-      setStations((prev) => (append ? dedupeStations([...prev, ...fallback.stations]) : fallback.stations));
+      setStations((prev) =>
+        append
+          ? dedupeStations([...prev, ...fallback.stations])
+          : fallback.stations,
+      );
       setClusters([]);
     },
     [center, lowZoomClusterMode, nearMeMode, selectedFuel, userLocation, viewport],
@@ -223,7 +278,9 @@ export default function HomePage() {
 
   const handleSearch = () => {
     if (searchQuery.trim().length < 2) return;
-    router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}&state=OH`);
+    router.push(
+      `/search?q=${encodeURIComponent(searchQuery.trim())}&state=OH`,
+    );
   };
 
   const handleModeToggle = useCallback(() => {
@@ -231,19 +288,21 @@ export default function HomePage() {
       setNearMeMode(false);
       return;
     }
-
     if (userLocation) {
       setCenter(userLocation);
       setNearMeMode(true);
       return;
     }
-
     locateUser();
   }, [locateUser, nearMeMode, userLocation]);
 
   const bestStation = useMemo(() => {
     return stations
-      .filter((s) => s.prices?.[selectedFuel] !== null && s.prices?.[selectedFuel] !== undefined)
+      .filter(
+        (s) =>
+          s.prices?.[selectedFuel] !== null &&
+          s.prices?.[selectedFuel] !== undefined,
+      )
       .sort(
         (a, b) =>
           (a.prices?.[selectedFuel] ?? Number.MAX_SAFE_INTEGER) -
@@ -253,7 +312,9 @@ export default function HomePage() {
 
   const priceRanges = useMemo(() => {
     const fuels: FuelType[] = ["regular", "midgrade", "premium", "diesel", "e85"];
-    const ranges: Partial<Record<FuelType, { min: number | null; max: number | null }>> = {};
+    const ranges: Partial<
+      Record<FuelType, { min: number | null; max: number | null }>
+    > = {};
     fuels.forEach((fuel) => {
       const prices = stations
         .map((s) => s.prices?.[fuel])
@@ -274,7 +335,10 @@ export default function HomePage() {
     setSelectedStationId(bestStation._id);
   };
 
-  const listStations = useMemo(() => stations.slice(0, visibleCount), [stations, visibleCount]);
+  const listStations = useMemo(
+    () => stations.slice(0, visibleCount),
+    [stations, visibleCount],
+  );
 
   const renderStationList = () => (
     <div className="space-y-2 p-3">
@@ -286,13 +350,16 @@ export default function HomePage() {
             <StationListCard
               key={station._id}
               station={station}
-              distance={toMiles(station.distanceKm ?? undefined) ?? undefined}
+              distance={
+                toMiles(station.distanceKm ?? undefined) ?? undefined
+              }
               selectedFuel={selectedFuel}
               isActive={station._id === selectedStationId}
               onClick={() => {
                 setSelectedStationId(station._id);
                 const [lng, lat] = station.coordinates.coordinates;
-                if (lat !== undefined && lng !== undefined) setCenter([lat, lng]);
+                if (lat !== undefined && lng !== undefined)
+                  setCenter([lat, lng]);
               }}
             />
           ))}
@@ -317,7 +384,11 @@ export default function HomePage() {
       {!loading && listStations.length < stations.length && (
         <button
           type="button"
-          onClick={() => setVisibleCount((prev) => Math.min(prev + PAGE_SIZE_LIST, stations.length))}
+          onClick={() =>
+            setVisibleCount((prev) =>
+              Math.min(prev + PAGE_SIZE_LIST, stations.length),
+            )
+          }
           className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[var(--bg-elevated)]"
         >
           Show more loaded stations
@@ -337,7 +408,8 @@ export default function HomePage() {
             <div>
               <p className="text-base font-black leading-tight">Fuelify</p>
               <p className="text-xs text-[var(--text-muted)]">
-                {stations.length} stations {nearMeMode ? "within 10km" : "in view"}
+                {stations.length} stations{" "}
+                {nearMeMode ? "within 10km" : "in view"}
               </p>
             </div>
           </div>
@@ -371,7 +443,9 @@ export default function HomePage() {
           <div className="flex h-14 items-center gap-2 rounded-2xl border border-[var(--border-strong)] p-2 glass shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
             <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-brand-gradient px-3 shadow-[var(--shadow-accent)]">
               <Fuel className="h-4 w-4 text-white" />
-              <span className="text-sm font-black text-white tracking-tight">Fuelify</span>
+              <span className="text-sm font-black text-white tracking-tight">
+                Fuelify
+              </span>
             </div>
 
             <div className="relative flex-1">
@@ -402,7 +476,11 @@ export default function HomePage() {
               ].join(" ")}
               aria-label="Toggle theme"
             >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
             </button>
 
             <button
@@ -424,9 +502,16 @@ export default function HomePage() {
 
         <section className="pointer-events-auto mt-2 flex items-center gap-2">
           <div className="rounded-2xl border border-[var(--border-strong)] p-1.5 glass shadow-[0_4px_20px_rgba(0,0,0,0.10)] flex-1">
-            <FuelChips selected={selectedFuel} onSelect={setSelectedFuel} priceRanges={priceRanges} />
+            <FuelChips
+              selected={selectedFuel}
+              onSelect={setSelectedFuel}
+              priceRanges={priceRanges}
+            />
           </div>
-          <ModeChip mode={nearMeMode ? "nearby" : "mapview"} onToggle={handleModeToggle} />
+          <ModeChip
+            mode={nearMeMode ? "nearby" : "mapview"}
+            onToggle={handleModeToggle}
+          />
         </section>
 
         {bestStation && bestStation.prices[selectedFuel] && (
@@ -445,9 +530,15 @@ export default function HomePage() {
           >
             <span className="text-base leading-none">↓</span>
             <span>
-              Best <strong>${bestStation.prices[selectedFuel]!.toFixed(2)}</strong> · {bestStation.name}
+              Best{" "}
+              <strong>
+                ${bestStation.prices[selectedFuel]!.toFixed(2)}
+              </strong>{" "}
+              · {bestStation.name}
               {bestStation.distanceKm !== undefined && (
-                <span className="ml-1 opacity-80">{(bestStation.distanceKm * 0.621371).toFixed(1)} mi</span>
+                <span className="ml-1 opacity-80">
+                  {(bestStation.distanceKm * 0.621371).toFixed(1)} mi
+                </span>
               )}
             </span>
           </button>

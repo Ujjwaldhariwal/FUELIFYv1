@@ -5,11 +5,18 @@ import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronRight, Clock, Fuel, Globe, MapPin, Phone } from 'lucide-react';
 import type { PriceDataMap, PriceHistoryEntry, Station } from '@/types';
-import { fetchStationBySlug, formatApiErrorForToast, getPricesByStation } from '@/services/api';
+import {
+  fetchStationBySlug,
+  formatApiErrorForToast,
+  getPricesByStation,
+  submitPriceReport,
+} from '@/services/api';
 import { StatusBadge } from '@/components/ui/Badge';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import { PriceCard } from '@/components/ui/PriceCard';
 import { Spinner } from '@/components/ui/Spinner';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 
 const CARD_FUELS: Array<{
@@ -24,6 +31,14 @@ const CARD_FUELS: Array<{
   { key: 'ev', fallback: 'e85', cardFuel: 'e85' },
 ];
 
+const SUBMIT_FUEL_OPTIONS: Array<{ value: keyof PriceDataMap; label: string }> = [
+  { value: 'petrol', label: 'Petrol' },
+  { value: 'diesel', label: 'Diesel' },
+  { value: 'premium', label: 'Premium' },
+  { value: 'cng', label: 'CNG' },
+  { value: 'ev', label: 'EV' },
+];
+
 export default function StationPage() {
   const params = useParams<{ state: string; slug: string }>();
   const slug = Array.isArray(params?.slug) ? params.slug[0] : params?.slug;
@@ -34,6 +49,9 @@ export default function StationPage() {
   const [priceData, setPriceData] = useState<PriceDataMap | undefined>(undefined);
   const [pageLoading, setPageLoading] = useState(true);
   const [priceLoading, setPriceLoading] = useState(false);
+  const [submitFuelType, setSubmitFuelType] = useState<keyof PriceDataMap>('petrol');
+  const [submitPrice, setSubmitPrice] = useState('');
+  const [submittingPrice, setSubmittingPrice] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -86,6 +104,33 @@ export default function StationPage() {
       isActive = false;
     };
   }, [show, station?._id]);
+
+  const handleSubmitPrice = async () => {
+    if (!station?._id) return;
+
+    const parsedPrice = Number.parseFloat(submitPrice);
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0 || parsedPrice > 999.99) {
+      show('Enter a valid price between 0.01 and 999.99', 'warning');
+      return;
+    }
+
+    setSubmittingPrice(true);
+    try {
+      await submitPriceReport({
+        stationId: station._id,
+        fuelType: submitFuelType,
+        price: Number(parsedPrice.toFixed(3)),
+      });
+      const latest = await getPricesByStation(station._id);
+      setPriceData(latest.prices);
+      setSubmitPrice('');
+      show('Thanks! Price submitted successfully.', 'success');
+    } catch (err) {
+      show(formatApiErrorForToast(err), 'error');
+    } finally {
+      setSubmittingPrice(false);
+    }
+  };
 
   const cards = useMemo(() => {
     if (!station) return [];
@@ -186,6 +231,57 @@ export default function StationPage() {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)]">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
+              <Fuel className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+            </span>
+            <h2 className="font-bold text-[var(--text-primary)]">Report a Price</h2>
+          </div>
+          <p className="mb-4 text-xs text-[var(--text-secondary)]">
+            Help drivers by submitting the latest pump price for this station.
+          </p>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Fuel Type</span>
+              <select
+                value={submitFuelType}
+                onChange={(event) => setSubmitFuelType(event.target.value as keyof PriceDataMap)}
+                className="min-h-[52px] rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              >
+                {SUBMIT_FUEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <Input
+              label="Price"
+              type="number"
+              min="0.01"
+              max="999.99"
+              step="0.001"
+              prefix="$"
+              placeholder="3.499"
+              value={submitPrice}
+              onChange={(event) => setSubmitPrice(event.target.value)}
+            />
+
+            <Button
+              type="button"
+              loading={submittingPrice}
+              disabled={submittingPrice || submitPrice.trim().length === 0}
+              onClick={handleSubmitPrice}
+              className="sm:min-w-[132px]"
+            >
+              Submit
+            </Button>
+          </div>
         </section>
 
         <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)]">

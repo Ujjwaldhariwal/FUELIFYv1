@@ -1,6 +1,8 @@
 # Fuelify Backend API Contract Changelog
 
+
 ## 2026-03-07 - Sprint 1 backend hardening
+
 
 ### Added
 - `GET /api/claims/station/:stationId/summary`
@@ -15,6 +17,7 @@
     - `404` with `code: "STATION_NOT_FOUND"`
     - `400` with `code: "INVALID_OBJECT_ID"` for malformed `stationId`
 
+
 ### Updated
 - All responses now include `x-request-id` header (middleware-generated when not supplied by caller).
 - Validation and server errors now include `requestId` in JSON body for traceability.
@@ -27,6 +30,7 @@
 - Added `GET /api/stations/clusters` for low-zoom aggregation:
   - query: `bbox`, optional `zoom`, `fuel`, `limit`
   - response: `clusters[]`, `totalClusters`, `totalStations`, `stepDegrees`, `truncated`
+
 
 ### Claim authority model update
 - `POST /api/auth/claim/verify` now marks station as `CLAIMED` (account ownership verified by OTP).
@@ -43,6 +47,7 @@
   - OSM consistency check using station source/address/name signals.
   - State registration format validation based on station state.
   - Domain mismatch rejection when claimant email domain and website domain diverge.
+
 
 ### Operational behavior
 - Added background risk rescoring monitor (enabled by default outside tests):
@@ -65,14 +70,18 @@
   - `REDIS_URL` used when `DOMAIN_EVENTS_PROVIDER=redis`
   - On Redis failure, domain events degrade to in-process memory events automatically.
 
+
 ## 2026-03-08 - Sprint 4 price staleness system
+
 
 ## [POST] /api/prices
 ### Request
 Body/Params: `{ stationId: string — MongoDB ObjectId of station, fuelType: "petrol"|"diesel"|"premium"|"cng"|"ev" — reported fuel, price: number — reported price (0 < price <= 999.99) }`
 
+
 ### Response 200
 `{ reportId: string — created PriceReport id, stationId: string — station id, fuelType: string — submitted fuel type, price: number — stored normalized price, reportedAt: string — ISO timestamp }`
+
 
 ### Errors
 | Status | Code | Condition |
@@ -83,12 +92,15 @@ Body/Params: `{ stationId: string — MongoDB ObjectId of station, fuelType: "pe
 | 404 | `STATION_NOT_FOUND` | station does not exist |
 | 429 | `RATE_LIMITED` | IP exceeds `priceLimiter` (5 requests / 10 minutes) |
 
+
 ## [POST] /api/prices/:reportId/confirm
 ### Request
 Body/Params: `{ reportId: string — PriceReport ObjectId path param, fingerprint: string — client fingerprint (required, max 64 chars) }`
 
+
 ### Response 200
 `{ confirmCount: number — current total confirmations after idempotent update }`
+
 
 ### Errors
 | Status | Code | Condition |
@@ -99,12 +111,15 @@ Body/Params: `{ reportId: string — PriceReport ObjectId path param, fingerprin
 | 409 | `CONFIRM_CAP_REACHED` | report already at confirm cap (`50`) |
 | 429 | `RATE_LIMITED` | IP exceeds `confirmLimiter` (10 requests / 10 minutes) |
 
+
 ## [GET] /api/prices/:stationId/latest
 ### Request
 Body/Params: `{ stationId: string — MongoDB ObjectId path param }`
 
+
 ### Response 200
 `{ stationId: string — station id, prices: { petrol: { price, reportedAt, isStale, confirmCount } | null, diesel: { price, reportedAt, isStale, confirmCount } | null, premium: { price, reportedAt, isStale, confirmCount } | null, cng: { price, reportedAt, isStale, confirmCount } | null, ev: { price, reportedAt, isStale, confirmCount } | null } }`
+
 
 ### Errors
 | Status | Code | Condition |
@@ -112,15 +127,62 @@ Body/Params: `{ stationId: string — MongoDB ObjectId path param }`
 | 400 | `INVALID_STATION_ID` | `stationId` is malformed |
 | 404 | `STATION_NOT_FOUND` | station does not exist |
 
+
+## 2026-03-08 - Sprint 6 data quality automation
+
+
+### Added
+- `GET /api/admin/stations/incomplete/summary`
+  - Purpose: provide quick data-quality health metrics for admin dashboards.
+  - Response shape:
+    - `totalStations: number`
+    - `incompleteTotal: number`
+    - `incompleteRatePct: number`
+    - `withPlaceId: number`
+    - `withoutPlaceId: number`
+    - `byStatus: Array<{ status: string, count: number }>`
+    - `byDataSource: Array<{ source: string, count: number }>`
+
+
+- `POST /api/admin/stations/incomplete/autofix`
+  - Purpose: auto-repair incomplete station addresses using Google Place details.
+  - Request body:
+    - `dryRun?: boolean` (default `true`)
+    - `limit?: number` (max `500`, default `200`)
+    - `state?: string` (optional 2-letter state filter)
+    - `onlyWithPlaceId?: boolean` (default `true`)
+  - Response shape:
+    - `mode: "DRY_RUN" | "EXECUTE"`
+    - `totalCandidates: number`
+    - `scanned: number`
+    - `fixed: number`
+    - `skippedNoPlaceId: number`
+    - `skippedNoDetails: number`
+    - `skippedNoAddress: number`
+    - `errors: number`
+    - `remainingIncomplete: number`
+    - `sample: Array<{ stationId: string, name: string, previousAddress?: object, nextAddress: object }>`
+
+
+### Errors
+| Status | Code | Condition |
+| --- | --- | --- |
+| 503 | `N/A` | `GOOGLE_PLACES_API_KEY` missing for execute mode |
+
+
 ## 2026-03-08 - Sprint 5 claim eligibility metadata
+
 
 ### Updated
 - `GET /api/stations`
 - `GET /api/stations/id/:id`
 - `GET /api/stations/:slug`
 
+
 All station payloads now include:
 
+
 `claimEligibility: { canClaim: boolean, reasons: ("INCOMPLETE_ADDRESS"|"ALREADY_CLAIMED"|"RISK_BLOCKED")[], hasCompleteAddress: boolean, stationStatus: "UNCLAIMED"|"CLAIMED"|"VERIFIED", riskStatus: "clean"|"watchlist"|"blocked" }`
+
 
 This allows claim UI to make deterministic decisions without reverse-engineering station status or address completeness.

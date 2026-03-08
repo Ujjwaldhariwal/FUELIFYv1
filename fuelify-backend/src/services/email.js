@@ -1,10 +1,26 @@
 // fuelify-backend/src/services/email.js
-// fuelify-backend/src/services/email.js
 const nodemailer = require('nodemailer');
+
+const PLACEHOLDER_PATTERNS = ['placeholder', 'your_', 'example', 'changeme'];
+
+const isMeaningfulValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return !PLACEHOLDER_PATTERNS.some((token) => normalized.includes(token));
+};
 
 const isSmtpConfigured = () => {
   const host = process.env.SMTP_HOST;
-  return Boolean(host && host.length > 0 && host !== 'placeholder');
+  const port = process.env.SMTP_PORT;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  return (
+    isMeaningfulValue(host) &&
+    isMeaningfulValue(port) &&
+    isMeaningfulValue(user) &&
+    isMeaningfulValue(pass)
+  );
 };
 
 const createTransport = () =>
@@ -15,10 +31,21 @@ const createTransport = () =>
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
 
+const sendMailSafely = async (payload) => {
+  if (!isSmtpConfigured()) return { sent: false, reason: 'SMTP_NOT_CONFIGURED' };
+
+  try {
+    const transporter = createTransport();
+    await transporter.sendMail(payload);
+    return { sent: true };
+  } catch (err) {
+    // Non-blocking behavior: email failures should not fail claim/login flows.
+    return { sent: false, reason: 'SMTP_SEND_FAILED', error: err?.message || 'Unknown SMTP error' };
+  }
+};
+
 const sendWelcomeEmail = async (to, ownerName, stationName) => {
-  if (!isSmtpConfigured()) return;
-  const transporter = createTransport();
-  await transporter.sendMail({
+  return sendMailSafely({
     from: `"Fuelify" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
     to,
     subject: `You've claimed ${stationName} on Fuelify!`,
@@ -32,9 +59,7 @@ const sendWelcomeEmail = async (to, ownerName, stationName) => {
 };
 
 const sendPriceUpdateAlert = async (to, stationName, prices) => {
-  if (!isSmtpConfigured()) return;
-  const transporter = createTransport();
-  await transporter.sendMail({
+  return sendMailSafely({
     from: `"Fuelify" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
     to,
     subject: `Price update confirmed - ${stationName}`,
@@ -48,4 +73,4 @@ const sendPriceUpdateAlert = async (to, stationName, prices) => {
   });
 };
 
-module.exports = { sendWelcomeEmail, sendPriceUpdateAlert };
+module.exports = { sendWelcomeEmail, sendPriceUpdateAlert, isSmtpConfigured };

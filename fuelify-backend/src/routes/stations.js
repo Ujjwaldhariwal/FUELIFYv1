@@ -24,6 +24,10 @@ const DEFAULT_CLUSTER_LIMIT = 300;
 const MAX_CLUSTER_LIMIT = 1000;
 const PRICE_REPORT_FUELS = ['petrol', 'diesel', 'premium', 'cng', 'ev'];
 const STALE_HOURS = 6;
+const COMPLETE_ADDRESS_FILTER = {
+  'address.street': { $type: 'string', $ne: '' },
+  'address.city': { $type: 'string', $ne: '' },
+};
 
 const toNumber = (value) => {
   const parsed = Number(value);
@@ -117,6 +121,7 @@ router.get('/', async (req, res, next) => {
     const bbox = parseBBox(req.query.bbox);
     const zoom = toNumber(req.query.zoom);
     const fuel = typeof req.query.fuel === 'string' ? req.query.fuel : null;
+    const includeIncomplete = req.query.includeIncomplete === 'true';
     const page = toPositiveInt(req.query.page, DEFAULT_PAGE);
     const limit = Math.min(toPositiveInt(req.query.limit, DEFAULT_LIMIT), MAX_LIMIT);
     const skip = (page - 1) * limit;
@@ -173,6 +178,7 @@ router.get('/', async (req, res, next) => {
             ],
           },
         },
+        ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER),
       };
       total = await Station.countDocuments(filter);
 
@@ -198,6 +204,7 @@ router.get('/', async (req, res, next) => {
           distanceField: 'distanceMeters',
           maxDistance: radiusKm * 1000,
           spherical: true,
+          ...(includeIncomplete ? {} : { query: COMPLETE_ADDRESS_FILTER }),
         },
       };
       const pipeline = [
@@ -224,7 +231,7 @@ router.get('/', async (req, res, next) => {
       total = totalResult[0]?.total || 0;
     } else {
       const state = typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH';
-      const filter = { 'address.state': state };
+      const filter = { 'address.state': state, ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER) };
       total = await Station.countDocuments(filter);
 
       const pipeline = [{ $match: filter }];
@@ -394,6 +401,7 @@ router.get('/clusters', async (req, res, next) => {
 router.get('/search', async (req, res, next) => {
   try {
     const { q, state } = req.query;
+    const includeIncomplete = req.query.includeIncomplete === 'true';
 
     if (!q || q.trim().length < 2) {
       return res.status(400).json({ error: 'Query must be at least 2 characters' });
@@ -402,6 +410,7 @@ router.get('/search', async (req, res, next) => {
     const filter = {
       $text: { $search: q.trim() },
       ...(state ? { 'address.state': state.toUpperCase() } : {}),
+      ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER),
     };
 
     const stations = await Station.find(filter)

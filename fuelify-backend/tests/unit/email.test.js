@@ -38,4 +38,18 @@ describe('email service', () => {
     expect(nodemailer.createTransport).toHaveBeenCalled();
     expect(mockSendMail).toHaveBeenCalled();
   });
+
+  test('skips email when SMTP values are placeholders', async () => {
+    process.env.SMTP_HOST = 'smtp.gmail.com';
+    process.env.SMTP_PORT = '587';
+    process.env.SMTP_USER = 'your@gmail.com';
+    process.env.SMTP_PASS = 'your_app_password';
+
+    const { sendWelcomeEmail } = require('../../src/services/email');
+    await expect(sendWelcomeEmail('owner@test.com', 'Owner', 'Station')).resolves.toEqual({
+      sent: false,
+      reason: 'SMTP_NOT_CONFIGURED',
+    });
+    expect(nodemailer.createTransport).not.toHaveBeenCalled();
+  });
 });

@@ -17,9 +17,6 @@ const Owner = require('../../src/models/Owner');
 const PriceHistory = require('../../src/models/PriceHistory');
 const Claim = require('../../src/models/Claim');
 const PriceReport = require('../../src/models/PriceReport');
-const pricesRouter = require('../../src/routes/prices');
-
-app.use('/api/prices', pricesRouter);
 
 let mongoServer;
 const TEST_DB_NAME = 'fuelify_integration_tests';

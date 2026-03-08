@@ -111,3 +111,16 @@ Body/Params: `{ stationId: string — MongoDB ObjectId path param }`
 | --- | --- | --- |
 | 400 | `INVALID_STATION_ID` | `stationId` is malformed |
 | 404 | `STATION_NOT_FOUND` | station does not exist |
+
+## 2026-03-08 - Sprint 5 claim eligibility metadata
+
+### Updated
+- `GET /api/stations`
+- `GET /api/stations/id/:id`
+- `GET /api/stations/:slug`
+
+All station payloads now include:
+
+`claimEligibility: { canClaim: boolean, reasons: ("INCOMPLETE_ADDRESS"|"ALREADY_CLAIMED"|"RISK_BLOCKED")[], hasCompleteAddress: boolean, stationStatus: "UNCLAIMED"|"CLAIMED"|"VERIFIED", riskStatus: "clean"|"watchlist"|"blocked" }`
+
+This allows claim UI to make deterministic decisions without reverse-engineering station status or address completeness.

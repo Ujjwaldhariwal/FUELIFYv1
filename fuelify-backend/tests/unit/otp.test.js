@@ -64,4 +64,20 @@ describe('otp service', () => {
     await expect(sendOtp('+15550002222', '123456')).resolves.toEqual({ success: true, bypass: true });
     expect(mockTwilioFactory).not.toHaveBeenCalled();
   });
+
+  test('falls back to bypass in non-production when twilio send throws', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.OTP_BYPASS_ENABLED = 'false';
+    process.env.TWILIO_ACCOUNT_SID = 'AC_TEST';
+    process.env.TWILIO_AUTH_TOKEN = 'AUTH_TEST';
+    process.env.TWILIO_PHONE_NUMBER = '+15550009999';
+    mockCreate.mockRejectedValueOnce(new Error('twilio transient failure'));
+
+    const { sendOtp } = require('../../src/services/otp');
+    await expect(sendOtp('+15550002222', '123456')).resolves.toEqual({
+      success: true,
+      bypass: true,
+      fallback: 'TWILIO_ERROR',
+    });
+  });
 });

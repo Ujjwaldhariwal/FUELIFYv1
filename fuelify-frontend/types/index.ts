@@ -59,6 +59,14 @@ export interface StationServices {
   evCharging: boolean;
 }
 
+export interface ClaimEligibility {
+  canClaim: boolean;
+  reasons: Array<'INCOMPLETE_ADDRESS' | 'ALREADY_CLAIMED' | 'RISK_BLOCKED'>;
+  hasCompleteAddress: boolean;
+  stationStatus: StationStatus;
+  riskStatus: RiskStatus;
+}
+
 export interface Station {
   id?: string;
   _id: string;
@@ -82,6 +90,7 @@ export interface Station {
   searchAppearances: number;
   dataSource: 'GOOGLE_PLACES' | 'OSM' | 'MANUAL';
   distanceKm?: number;
+  claimEligibility?: ClaimEligibility;
   createdAt: string;
   updatedAt: string;
 }

@@ -31,6 +31,7 @@ const DEFAULT_NEAR_LIMIT = 180;
 const PAGE_SIZE_LIST = 80;
 const DEFAULT_NEAR_RADIUS_KM = 10;
 const FALLBACK_NEAR_RADIUS_KM = 25;
+const ENABLE_LOCAL_DATA_FALLBACK = process.env.NODE_ENV !== "production";
 
 const toMiles = (distanceKm?: number) => {
   if (distanceKm === undefined) return null;
@@ -99,6 +100,24 @@ export default function HomePage() {
 
   const fetchListPage = useCallback(
     async (page: number, append: boolean, signal?: AbortSignal) => {
+      const applyDefaultOhioFallback = async () => {
+        const fallback = await fetchNearbyStations(
+          DEFAULT_CENTER[0],
+          DEFAULT_CENTER[1],
+          FALLBACK_NEAR_RADIUS_KM,
+          selectedFuel,
+          DEFAULT_VIEWPORT_LIMIT,
+          signal,
+        );
+        setNearMeMode(false);
+        setViewport(null);
+        setCenter(DEFAULT_CENTER);
+        setListPages(fallback.pages || 1);
+        setListPage(1);
+        setStations(fallback.stations);
+        setClusters([]);
+      };
+
       if (nearMeMode && userLocation) {
         const response = await fetchNearbyStations(
           userLocation[0],
@@ -110,22 +129,8 @@ export default function HomePage() {
         );
 
         // If no nearby coverage exists for current user location, fall back to seeded Ohio data.
-        if ((response.total || 0) === 0) {
-          const fallback = await fetchNearbyStations(
-            DEFAULT_CENTER[0],
-            DEFAULT_CENTER[1],
-            FALLBACK_NEAR_RADIUS_KM,
-            selectedFuel,
-            DEFAULT_VIEWPORT_LIMIT,
-            signal,
-          );
-          setNearMeMode(false);
-          setViewport(null);
-          setCenter(DEFAULT_CENTER);
-          setListPages(fallback.pages || 1);
-          setListPage(1);
-          setStations(fallback.stations);
-          setClusters([]);
+        if ((response.total || 0) === 0 && ENABLE_LOCAL_DATA_FALLBACK) {
+          await applyDefaultOhioFallback();
           return;
         }
 
@@ -158,6 +163,10 @@ export default function HomePage() {
           page,
           signal,
         );
+        if ((response.total || 0) === 0 && page === 1 && ENABLE_LOCAL_DATA_FALLBACK) {
+          await applyDefaultOhioFallback();
+          return;
+        }
         setListPages(response.pages || 1);
         setListPage(page);
         setStations((prev) => (append ? dedupeStations([...prev, ...response.stations]) : response.stations));

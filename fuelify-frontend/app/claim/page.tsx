@@ -19,14 +19,24 @@ function ClaimLandingPageContent() {
   const [loading, setLoading] = useState(false);
 
   const hasCompleteAddress = (station: Station) =>
+    station.claimEligibility?.hasCompleteAddress ??
     Boolean(station.address?.street && station.address?.city);
+
+  const isClaimable = (station: Station) =>
+    station.claimEligibility?.canClaim ??
+    (station.status === 'UNCLAIMED' && hasCompleteAddress(station));
+
+  const formatAddress = (station: Station) => {
+    const parts = [station.address?.street, station.address?.city].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : 'Address unavailable';
+  };
 
   const search = async () => {
     if (query.trim().length < 2) return;
     setLoading(true);
     try {
       const { stations } = await searchStations(query, 'OH');
-      setResults(stations.filter((station) => station.status === 'UNCLAIMED' && hasCompleteAddress(station)));
+      setResults(stations.filter((station) => isClaimable(station)));
     } catch {
       setResults([]);
     } finally {
@@ -130,7 +140,7 @@ function ClaimLandingPageContent() {
                   <div>
                     <p className="font-semibold text-[var(--text-primary)] group-hover:text-[var(--text-primary)]">{station.name}</p>
                     <p className="text-xs text-[var(--text-secondary)]">
-                      {station.address.street}, {station.address.city}
+                      {formatAddress(station)}
                     </p>
                   </div>
                   <span className="ml-auto flex-shrink-0 text-xs font-semibold text-[var(--accent-primary)]">Claim →</span>

@@ -8,6 +8,8 @@
     "seed": "node src/scripts/seedOhio.js",
     "seed:stations": "node src/scripts/seedStations.js",
     "seed:dev:bypass": "node src/scripts/seedDevBypass.js",
+    "seed:beta:dry": "node src/scripts/prepareBetaData.js --dry-run",
+    "seed:beta": "node src/scripts/prepareBetaData.js --execute",
     "test": "jest --runInBand --detectOpenHandles",
     "test:integration": "jest --runInBand --detectOpenHandles tests/integration"
   },

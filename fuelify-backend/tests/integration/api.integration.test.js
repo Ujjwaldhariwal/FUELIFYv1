@@ -9,6 +9,7 @@ require('dotenv').config();
 const request = require('supertest');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const { app } = require('../../src/server');
@@ -136,6 +137,8 @@ const makeAdminOwner = async () => {
     isVerified: true,
   });
 };
+
+const signOwnerToken = (ownerId) => jwt.sign({ id: ownerId.toString() }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
 
 beforeAll(async () => {
@@ -904,6 +907,90 @@ describe('Fuelify backend integration', () => {
     expect(typeof res.body.discoveredPlaces).toBe('number');
     expect(typeof res.body.wouldInsert).toBe('number');
     expect(typeof res.body.scannedPoints).toBe('number');
+  });
+
+  test('GET /api/admin/stations/incomplete returns only incomplete-address stations', async () => {
+    const admin = await makeAdminOwner();
+    const token = signOwnerToken(admin._id);
+
+    await makeStation({
+      name: 'Complete Address Station',
+      slug: 'complete-address-station-columbus-oh',
+      regular: 3.222,
+      status: 'UNCLAIMED',
+    });
+
+    await Station.create({
+      slug: 'incomplete-address-station-columbus-oh',
+      name: 'Incomplete Address Station',
+      brand: 'bp',
+      address: {
+        street: '',
+        city: 'Columbus',
+        state: 'OH',
+        zip: '43215',
+        country: 'US',
+      },
+      coordinates: { type: 'Point', coordinates: [-82.9988, 39.9612] },
+      status: 'UNCLAIMED',
+      prices: { regular: null, midgrade: null, premium: null, diesel: null, e85: null },
+      dataSource: 'MANUAL',
+    });
+
+    const res = await request(app)
+      .get('/api/admin/stations/incomplete')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.stations).toHaveLength(1);
+    expect(res.body.stations[0].name).toBe('Incomplete Address Station');
+  });
+
+  test('PATCH /api/admin/stations/:id/address updates station and removes it from incomplete list', async () => {
+    const admin = await makeAdminOwner();
+    const token = signOwnerToken(admin._id);
+
+    const station = await Station.create({
+      slug: 'address-fix-station-columbus-oh',
+      name: 'Address Fix Station',
+      brand: 'shell',
+      address: {
+        street: '',
+        city: 'Columbus',
+        state: 'OH',
+        zip: '43215',
+        country: 'US',
+      },
+      coordinates: { type: 'Point', coordinates: [-82.9988, 39.9612] },
+      status: 'UNCLAIMED',
+      prices: { regular: null, midgrade: null, premium: null, diesel: null, e85: null },
+      dataSource: 'MANUAL',
+    });
+
+    const patchRes = await request(app)
+      .patch(`/api/admin/stations/${station._id.toString()}/address`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        address: {
+          street: '205 W Front St',
+          city: 'Columbus',
+          state: 'OH',
+          zip: '43215',
+          country: 'US',
+        },
+      });
+
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.station.address.street).toBe('205 W Front St');
+
+    const incompleteRes = await request(app)
+      .get('/api/admin/stations/incomplete')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(incompleteRes.status).toBe(200);
+    const names = incompleteRes.body.stations.map((item) => item.name);
+    expect(names).not.toContain('Address Fix Station');
   });
 });
 

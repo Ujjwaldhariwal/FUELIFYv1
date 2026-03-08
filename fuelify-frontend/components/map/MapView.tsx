@@ -309,11 +309,6 @@ export const MapView = ({
 
       const colors = readMarkerColors();
 
-      const anyRealPrice = stations.some(
-        (s) => s.prices?.[selectedFuel] !== null && s.prices?.[selectedFuel] !== undefined
-      );
-      const usePlaceholder = !anyRealPrice;
-
       for (const point of displayPoints) {
         if (point.kind === 'cluster') {
           const element = createClusterMarkerElement(point.count, point.minPrice, colors);
@@ -333,7 +328,7 @@ export const MapView = ({
 
         const { station, lat, lng } = point;
         const isSelected = station._id === selectedStationId;
-        const { element, hasPrice } = createMarkerElement(station, selectedFuel, isSelected, colors, usePlaceholder);
+        const { element, hasPrice } = createMarkerElement(station, selectedFuel, isSelected, colors);
         element.addEventListener('click', (e) => {
           e.stopPropagation();
           onStationSelect(station);

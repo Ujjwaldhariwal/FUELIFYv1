@@ -38,6 +38,11 @@ router.post('/claim/initiate', otpLimiter, async (req, res, next) => {
     if (station.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station claims are temporarily blocked' });
     }
+    if (!station.address?.street || !station.address?.city) {
+      return res.status(422).json({
+        error: 'Station listing is incomplete and cannot be claimed yet. Please contact support.',
+      });
+    }
 
     // FIX 1 (from sprint security pass) — verified owner lockout prevention
     const existingOwner = await Owner.findOne({ phone });

@@ -18,12 +18,15 @@ function ClaimLandingPageContent() {
   const [results, setResults] = useState<Station[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const hasCompleteAddress = (station: Station) =>
+    Boolean(station.address?.street && station.address?.city);
+
   const search = async () => {
     if (query.trim().length < 2) return;
     setLoading(true);
     try {
       const { stations } = await searchStations(query, 'OH');
-      setResults(stations.filter((station) => station.status === 'UNCLAIMED'));
+      setResults(stations.filter((station) => station.status === 'UNCLAIMED' && hasCompleteAddress(station)));
     } catch {
       setResults([]);
     } finally {

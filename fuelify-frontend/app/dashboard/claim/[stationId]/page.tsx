@@ -155,6 +155,7 @@ export default function ClaimFlowPage() {
   };
 
   const stationBlocked = claimSummary?.risk?.status === 'blocked';
+  const stationIdentityIncomplete = !station?.address?.street || !station?.address?.city;
   const stationAlreadyClaimed = station?.status !== 'UNCLAIMED';
   const cooldownUntil = claimSummary?.claim?.retryAt ? new Date(claimSummary.claim.retryAt) : null;
   const inCooldown = Boolean(cooldownUntil && cooldownUntil > new Date());
@@ -215,6 +216,12 @@ export default function ClaimFlowPage() {
                 </div>
               )}
 
+              {stationIdentityIncomplete && (
+                <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                  This listing has incomplete address data and cannot be claimed yet.
+                </div>
+              )}
+
               <div className="mb-6 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
                 <BrandLogo brand={station.brand} size={48} />
                 <div>
@@ -226,7 +233,11 @@ export default function ClaimFlowPage() {
               </div>
 
               <div className="flex gap-2">
-                <Button fullWidth onClick={() => setStep(2)} disabled={stationBlocked || stationAlreadyClaimed}>
+                <Button
+                  fullWidth
+                  onClick={() => setStep(2)}
+                  disabled={stationBlocked || stationAlreadyClaimed || stationIdentityIncomplete}
+                >
                   Yes, this is my station &rarr;
                 </Button>
                 <Button fullWidth variant="secondary" onClick={() => router.push('/claim')}>

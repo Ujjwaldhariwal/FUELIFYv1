@@ -1,15 +1,38 @@
 // fuelify-backend/src/services/otp.js
 const twilio = require('twilio');
 
-const isOtpBypassEnabled = () =>
-  process.env.NODE_ENV !== 'production' && process.env.OTP_BYPASS_ENABLED === 'true';
+const isNonProduction = () => process.env.NODE_ENV !== 'production';
+
+const hasUsableTwilioConfig = () => {
+  const sid = String(process.env.TWILIO_ACCOUNT_SID || '').trim();
+  const token = String(process.env.TWILIO_AUTH_TOKEN || '').trim();
+  const from = String(process.env.TWILIO_PHONE_NUMBER || '').trim();
+  return sid.startsWith('AC') && token.length > 8 && from.startsWith('+');
+};
+
+const isOtpBypassEnabled = () => {
+  if (!isNonProduction()) return false;
+  if (process.env.OTP_BYPASS_ENABLED === 'true') return true;
+  // Local/dev safety net: if Twilio is not configured correctly, bypass OTP.
+  return !hasUsableTwilioConfig();
+};
 
 const getBypassOtp = () => process.env.OTP_BYPASS_CODE || '123456';
+
+const otpProviderConfigError = () => {
+  const err = new Error('OTP provider is not configured. Enable OTP_BYPASS_ENABLED in local/dev or configure Twilio.');
+  err.status = 503;
+  err.code = 'OTP_PROVIDER_MISCONFIGURED';
+  return err;
+};
 
 // Returns: { success: true } or throws
 const sendOtp = async (phone, otp) => {
   if (isOtpBypassEnabled()) {
     return { success: true, bypass: true };
+  }
+  if (!hasUsableTwilioConfig()) {
+    throw otpProviderConfigError();
   }
 
   // Normalize phone to E.164 format - assume US if no country code
@@ -36,4 +59,4 @@ const generateOtp = () => {
 // Returns OTP expiry date (10 minutes from now)
 const generateExpiry = () => new Date(Date.now() + 10 * 60 * 1000);
 
-module.exports = { sendOtp, generateOtp, generateExpiry, isOtpBypassEnabled };
+module.exports = { sendOtp, generateOtp, generateExpiry, isOtpBypassEnabled, hasUsableTwilioConfig };

@@ -13,6 +13,8 @@ const AUTOFIX_DELAY_MS = 150;
 const REVERSE_GEOCODE_DELAY_MS = 1100;
 const REVERSE_GEOCODE_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
 const insecureHttpsAgent = new https.Agent({ rejectUnauthorized: false });
+const CONNECT_RETRY_ATTEMPTS = 5;
+const CONNECT_RETRY_DELAY_MS = 3000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -423,6 +425,26 @@ const printSummary = ({ mode, before, after, autofix, prices }) => {
   console.log('================================================\n');
 };
 
+const connectWithRetry = async () => {
+  let lastError = null;
+  for (let attempt = 1; attempt <= CONNECT_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      await mongoose.connect(process.env.MONGODB_URI);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < CONNECT_RETRY_ATTEMPTS) {
+        console.log(
+          `[prepareBetaData] Mongo connect attempt ${attempt}/${CONNECT_RETRY_ATTEMPTS} failed: ${error.message}. Retrying...`
+        );
+        await sleep(CONNECT_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to connect to MongoDB');
+};
+
 const main = async () => {
   const options = parseArgs();
 
@@ -430,7 +452,7 @@ const main = async () => {
     throw new Error('MONGODB_URI is required');
   }
 
-  await mongoose.connect(process.env.MONGODB_URI);
+  await connectWithRetry();
 
   try {
     const before = await buildMetrics(options.state);

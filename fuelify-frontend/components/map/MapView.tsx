@@ -1,50 +1,56 @@
-'use client';
+//fuelify-frontend/components/map/MapView.tsx
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import type { FuelType, Station, StationCluster } from '@/types';
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import type { FuelType, Station, StationCluster } from "@/types";
 import {
   createClusterMarkerElement,
   createMarkerElement,
   getStationPrice,
   readMarkerColors,
-} from './MarkerFactory';
+} from "./MarkerFactory";
 
 const TILE_STYLES: Record<string, maplibregl.StyleSpecification> = {
   light: {
     version: 8,
     sources: {
       carto: {
-        type: 'raster',
+        type: "raster",
         tiles: [
-          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+          "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
         ],
         tileSize: 256,
         attribution:
           '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
       },
     },
-    layers: [{ id: 'carto', type: 'raster', source: 'carto', minzoom: 0, maxzoom: 19 }],
+    layers: [
+      { id: "carto", type: "raster", source: "carto", minzoom: 0, maxzoom: 19 },
+    ],
   },
   dark: {
     version: 8,
     sources: {
       carto: {
-        type: 'raster',
+        type: "raster",
         tiles: [
-          'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+          "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+          "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+          "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         ],
         tileSize: 256,
         attribution:
           '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
       },
     },
-    layers: [{ id: 'carto', type: 'raster', source: 'carto', minzoom: 0, maxzoom: 19 }],
+    layers: [
+      { id: "carto", type: "raster", source: "carto", minzoom: 0, maxzoom: 19 },
+    ],
   },
 };
 
@@ -62,34 +68,48 @@ interface MapViewProps {
   center: [number, number];
   onStationSelect: (station: Station) => void;
   selectedStationId?: string;
-  theme?: 'light' | 'dark';
+  theme?: "light" | "dark";
   initialZoom?: number;
   onViewportChange?: (viewport: MapViewportInfo) => void;
   onMapInteraction?: () => void;
 }
 
 type DisplayPoint =
-  | { kind: 'station'; station: Station; lat: number; lng: number }
-  | { kind: 'cluster'; lat: number; lng: number; count: number; minPrice: number | null };
+  | { kind: "station"; station: Station; lat: number; lng: number }
+  | {
+      kind: "cluster";
+      lat: number;
+      lng: number;
+      count: number;
+      minPrice: number | null;
+    };
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 const getClusterStepDegrees = (zoom: number) => {
-  if (zoom >= 11) return 0;
+  if (zoom >= 11) return 0;     // individual markers
   if (zoom >= 10) return 0.08;
-  if (zoom >= 9) return 0.16;
-  if (zoom >= 8) return 0.35;
-  return 0.7;
+  if (zoom >= 9)  return 0.16;
+  if (zoom >= 8)  return 0.35;
+  if (zoom >= 6)  return 1.2;   // county-level
+  if (zoom >= 4)  return 4.0;   // state-level
+  return 12.0;                   // continent — everything collapses to 1-3 bubbles
 };
 
-const buildDisplayPoints = (stations: Station[], selectedFuel: FuelType, zoom: number): DisplayPoint[] => {
+
+const buildDisplayPoints = (
+  stations: Station[],
+  selectedFuel: FuelType,
+  zoom: number,
+): DisplayPoint[] => {
   const step = getClusterStepDegrees(zoom);
   if (step === 0) {
     return stations
       .map((station) => {
         const [lng, lat] = station.coordinates.coordinates;
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return { kind: 'station', station, lat, lng } as DisplayPoint;
+        return { kind: "station", station, lat, lng } as DisplayPoint;
       })
       .filter((item): item is DisplayPoint => item !== null);
   }
@@ -108,12 +128,10 @@ const buildDisplayPoints = (stations: Station[], selectedFuel: FuelType, zoom: n
   for (const station of stations) {
     const [lng, lat] = station.coordinates.coordinates;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-
     const latBucket = Math.floor(lat / step);
     const lngBucket = Math.floor(lng / step);
     const key = `${latBucket}:${lngBucket}`;
     const price = getStationPrice(station, selectedFuel);
-
     const existing = buckets.get(key);
     if (!existing) {
       buckets.set(key, {
@@ -125,11 +143,15 @@ const buildDisplayPoints = (stations: Station[], selectedFuel: FuelType, zoom: n
       });
       continue;
     }
-
     existing.count += 1;
     existing.latSum += lat;
     existing.lngSum += lng;
-    existing.minPrice = existing.minPrice === null ? price : price === null ? existing.minPrice : Math.min(existing.minPrice, price);
+    existing.minPrice =
+      existing.minPrice === null
+        ? price
+        : price === null
+          ? existing.minPrice
+          : Math.min(existing.minPrice, price);
     existing.station = existing.station || station;
   }
 
@@ -137,21 +159,18 @@ const buildDisplayPoints = (stations: Station[], selectedFuel: FuelType, zoom: n
   for (const bucket of buckets.values()) {
     const lat = bucket.latSum / bucket.count;
     const lng = bucket.lngSum / bucket.count;
-
     if (bucket.count === 1 && bucket.station) {
-      points.push({ kind: 'station', station: bucket.station, lat, lng });
+      points.push({ kind: "station", station: bucket.station, lat, lng });
       continue;
     }
-
     points.push({
-      kind: 'cluster',
+      kind: "cluster",
       lat,
       lng,
       count: bucket.count,
       minPrice: bucket.minPrice,
     });
   }
-
   return points;
 };
 
@@ -173,46 +192,64 @@ export const MapView = ({
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const initRef = useRef(false);
   const suppressNextMoveRef = useRef(false);
-  const appliedThemeRef = useRef<'light' | 'dark'>(theme || 'dark');
+  const appliedThemeRef = useRef<"light" | "dark">(theme || "dark");
   const [zoomLevel, setZoomLevel] = useState(initialZoom);
 
-  const displayPoints = useMemo(
-    () => {
-      if (useServerClusters && clusters.length > 0) {
-        return clusters.map((cluster) => ({
-          kind: 'cluster' as const,
-          lat: cluster.center.lat,
-          lng: cluster.center.lng,
-          count: cluster.count,
-          minPrice: cluster.minPrice,
-        }));
-      }
-      return buildDisplayPoints(stations, selectedFuel, zoomLevel);
-    },
-    [clusters, selectedFuel, stations, useServerClusters, zoomLevel]
-  );
+  // ─── Stable callback refs — prevents stale closures in init effect ───────
+  const onViewportChangeRef = useRef(onViewportChange);
+  const onMapInteractionRef = useRef(onMapInteraction);
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
+  useEffect(() => {
+    onMapInteractionRef.current = onMapInteraction;
+  }, [onMapInteraction]);
+  // ─────────────────────────────────────────────────────────────────────────
 
+  const initialCenterRef = useRef(center);
+  const initialZoomRef = useRef(initialZoom);
+
+  const displayPoints = useMemo(() => {
+    if (useServerClusters && clusters.length > 0) {
+      return clusters.map((cluster) => ({
+        kind: "cluster" as const,
+        lat: cluster.center.lat,
+        lng: cluster.center.lng,
+        count: cluster.count,
+        minPrice: cluster.minPrice,
+      }));
+    }
+    return buildDisplayPoints(stations, selectedFuel, zoomLevel);
+  }, [clusters, selectedFuel, stations, useServerClusters, zoomLevel]);
+
+  // ─── Init map ONCE — no center/callback deps to prevent rebuild flicker ──
   useEffect(() => {
     if (!containerRef.current || initRef.current) return;
     initRef.current = true;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: TILE_STYLES[theme || 'dark'],
-      center: [center[1], center[0]],
-      zoom: initialZoom,
+      style: TILE_STYLES[theme || "dark"],
+      center: [initialCenterRef.current[1], initialCenterRef.current[0]],
+      zoom: initialZoomRef.current,
       attributionControl: false,
       fadeDuration: 0,
     });
 
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    map.addControl(
+      new maplibregl.AttributionControl({ compact: true }),
+      "bottom-right",
+    );
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: false }),
+      "bottom-right",
+    );
     map.scrollZoom.setWheelZoomRate(1 / 220);
 
     const emitViewport = () => {
-      if (!onViewportChange) return;
+      if (!onViewportChangeRef.current) return;
       const b = map.getBounds();
-      onViewportChange({
+      onViewportChangeRef.current({
         center: [map.getCenter().lat, map.getCenter().lng],
         zoom: map.getZoom(),
         bounds: {
@@ -224,12 +261,12 @@ export const MapView = ({
       });
     };
 
-    map.on('load', () => {
+    map.on("load", () => {
       setZoomLevel(map.getZoom());
       emitViewport();
     });
 
-    map.on('moveend', () => {
+    map.on("moveend", () => {
       setZoomLevel(map.getZoom());
       if (suppressNextMoveRef.current) {
         suppressNextMoveRef.current = false;
@@ -238,8 +275,8 @@ export const MapView = ({
       emitViewport();
     });
 
-    map.on('dragstart', () => onMapInteraction?.());
-    map.on('zoomstart', () => onMapInteraction?.());
+    map.on("dragstart", () => onMapInteractionRef.current?.());
+    map.on("zoomstart", () => onMapInteractionRef.current?.());
 
     mapRef.current = map;
 
@@ -250,29 +287,31 @@ export const MapView = ({
       mapRef.current = null;
       initRef.current = false;
     };
-  }, [center, initialZoom, onMapInteraction, onViewportChange, theme]);
+  }, []); // ← empty deps: map inits once, never rebuilds
+  // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── Theme swap without map rebuild ──────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const nextTheme = theme || 'dark';
+    const nextTheme = theme || "dark";
     if (appliedThemeRef.current === nextTheme) return;
     appliedThemeRef.current = nextTheme;
     map.setStyle(TILE_STYLES[nextTheme]);
   }, [theme]);
+  // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── Fly to center when it changes ───────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    const nextCenter = [center[1], center[0]] as [number, number];
     const curr = map.getCenter();
-    const drift = Math.abs(curr.lat - center[0]) + Math.abs(curr.lng - center[1]);
+    const drift =
+      Math.abs(curr.lat - center[0]) + Math.abs(curr.lng - center[1]);
     if (drift < 0.00035) return;
-
     suppressNextMoveRef.current = true;
     map.flyTo({
-      center: nextCenter,
+      center: [center[1], center[0]],
       zoom: clamp(map.getZoom(), 8, 14),
       speed: 1.2,
       curve: 1.42,
@@ -280,18 +319,17 @@ export const MapView = ({
       essential: true,
     });
   }, [center]);
+  // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── Fly to selected station ──────────────────────────────────────────────
   useEffect(() => {
     if (!selectedStationId) return;
     const map = mapRef.current;
     if (!map) return;
-
-    const selectedStation = stations.find((station) => station._id === selectedStationId);
+    const selectedStation = stations.find((s) => s._id === selectedStationId);
     if (!selectedStation) return;
-
     const [lng, lat] = selectedStation.coordinates.coordinates;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-
     suppressNextMoveRef.current = true;
     map.flyTo({
       center: [lng, lat],
@@ -302,7 +340,9 @@ export const MapView = ({
       essential: true,
     });
   }, [selectedStationId, stations]);
+  // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── Render markers ───────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -310,36 +350,46 @@ export const MapView = ({
     const renderMarkers = () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
-
       const colors = readMarkerColors();
 
       for (const point of displayPoints) {
-        if (point.kind === 'cluster') {
-          const element = createClusterMarkerElement(point.count, point.minPrice, colors);
-          element.addEventListener('click', (e) => {
+        if (point.kind === "cluster") {
+          const element = createClusterMarkerElement(
+            point.count,
+            point.minPrice,
+            colors,
+          );
+          element.addEventListener("click", (e) => {
             e.stopPropagation();
-            onMapInteraction?.();
+            onMapInteractionRef.current?.();
             map.easeTo({
               center: [point.lng, point.lat],
               zoom: clamp(map.getZoom() + 1.25, map.getZoom(), 14),
               duration: 420,
             });
           });
-          const marker = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([point.lng, point.lat]).addTo(map);
+          const marker = new maplibregl.Marker({ element, anchor: "center" })
+            .setLngLat([point.lng, point.lat])
+            .addTo(map);
           markersRef.current.push(marker);
           continue;
         }
 
         const { station, lat, lng } = point;
         const isSelected = station._id === selectedStationId;
-        const { element, hasPrice } = createMarkerElement(station, selectedFuel, isSelected, colors);
-        element.addEventListener('click', (e) => {
+        const { element, hasPrice } = createMarkerElement(
+          station,
+          selectedFuel,
+          isSelected,
+          colors,
+        );
+        element.addEventListener("click", (e) => {
           e.stopPropagation();
           onStationSelect(station);
         });
         const marker = new maplibregl.Marker({
           element,
-          anchor: hasPrice ? 'bottom' : 'center',
+          anchor: hasPrice ? "bottom" : "center",
         })
           .setLngLat([lng, lat])
           .addTo(map);
@@ -350,11 +400,24 @@ export const MapView = ({
     if (map.isStyleLoaded()) {
       renderMarkers();
     } else {
-      map.once('styledata', renderMarkers);
+      map.once("styledata", renderMarkers);
     }
-  }, [displayPoints, onMapInteraction, onStationSelect, selectedFuel, selectedStationId, stations, theme]);
+  }, [
+    displayPoints,
+    onStationSelect,
+    selectedFuel,
+    selectedStationId,
+    stations,
+  ]);
+  // ─────────────────────────────────────────────────────────────────────────
 
-  return <div ref={containerRef} className="h-full w-full" style={{ background: 'var(--bg-primary)' }} />;
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full"
+      style={{ background: "var(--bg-primary)" }}
+    />
+  );
 };
 
 export default MapView;

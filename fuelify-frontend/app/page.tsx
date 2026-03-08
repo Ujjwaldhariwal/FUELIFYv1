@@ -1,4 +1,6 @@
-﻿"use client";
+﻿//fuelify-frontend/app/page.tsx
+
+"use client";
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -33,9 +35,6 @@ const DEFAULT_NEAR_RADIUS_KM = 10;
 const FALLBACK_NEAR_RADIUS_KM = 25;
 const ENABLE_LOCAL_DATA_FALLBACK = process.env.NODE_ENV !== "production";
 
-// ─── DEV LOCATION OVERRIDE ───────────────────────────────────────────────────
-// Set NEXT_PUBLIC_DEV_LAT and NEXT_PUBLIC_DEV_LNG in .env.local to skip
-// geolocation entirely during local development (e.g. when location is blocked).
 const DEV_LAT = process.env.NEXT_PUBLIC_DEV_LAT
   ? parseFloat(process.env.NEXT_PUBLIC_DEV_LAT)
   : null;
@@ -44,7 +43,6 @@ const DEV_LNG = process.env.NEXT_PUBLIC_DEV_LNG
   : null;
 const DEV_LOCATION: [number, number] | null =
   DEV_LAT !== null && DEV_LNG !== null ? [DEV_LAT, DEV_LNG] : null;
-// ─────────────────────────────────────────────────────────────────────────────
 
 const toMiles = (distanceKm?: number) => {
   if (distanceKm === undefined) return null;
@@ -68,6 +66,7 @@ export default function HomePage() {
 
   const [stations, setStations] = useState<Station[]>([]);
   const [clusters, setClusters] = useState<StationCluster[]>([]);
+  const [totalInView, setTotalInView] = useState(0); // ← true API total, not capped array length
   const [selectedFuel, setSelectedFuel] = useState<FuelType>("regular");
   const [center, setCenter] = useState<[number, number]>(
     DEV_LOCATION ?? DEFAULT_CENTER,
@@ -88,10 +87,7 @@ export default function HomePage() {
   const [listPages, setListPages] = useState(1);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE_LIST);
 
-  // ─── FLICKER FIX: geolocation runs exactly once ──────────────────────────
   const locationFetchedRef = useRef(false);
-  // ─────────────────────────────────────────────────────────────────────────
-
   const inFlightControllerRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,19 +95,16 @@ export default function HomePage() {
     !nearMeMode && Boolean(viewport && viewport.zoom <= 9);
 
   const locateUser = useCallback(() => {
-    // If dev override is active, skip geolocation entirely
     if (DEV_LOCATION) {
       setUserLocation(DEV_LOCATION);
       setCenter(DEV_LOCATION);
       setNearMeMode(true);
       return;
     }
-
     if (!navigator.geolocation) {
       setNearMeMode(false);
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const next: [number, number] = [coords.latitude, coords.longitude];
@@ -120,25 +113,17 @@ export default function HomePage() {
         setNearMeMode(true);
       },
       () => {
-        // Geolocation denied or unavailable — fall back to map view
-        // Do NOT call locateUser again from here
         setNearMeMode(false);
       },
-      {
-        enableHighAccuracy: false,   // faster, less battery drain
-        timeout: 8000,
-        maximumAge: 30 * 60 * 1000, // cache for 30 min — prevents re-requests
-      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 30 * 60 * 1000 },
     );
   }, []);
 
-  // ─── Run geolocation ONCE on mount only ──────────────────────────────────
   useEffect(() => {
     if (locationFetchedRef.current) return;
     locationFetchedRef.current = true;
     locateUser();
-  }, []); // empty deps — intentionally runs once
-  // ─────────────────────────────────────────────────────────────────────────
+  }, []);
 
   const fetchListPage = useCallback(
     async (page: number, append: boolean, signal?: AbortSignal) => {
@@ -156,6 +141,7 @@ export default function HomePage() {
         setCenter(DEFAULT_CENTER);
         setListPages(fallback.pages || 1);
         setListPage(1);
+        setTotalInView(fallback.total || 0);
         setStations(fallback.stations);
         setClusters([]);
       };
@@ -177,6 +163,7 @@ export default function HomePage() {
 
         setListPages(response.pages || 1);
         setListPage(page);
+        setTotalInView(response.total || 0);
         setStations((prev) =>
           append
             ? dedupeStations([...prev, ...response.stations])
@@ -208,12 +195,17 @@ export default function HomePage() {
           page,
           signal,
         );
-        if ((response.total || 0) === 0 && page === 1 && ENABLE_LOCAL_DATA_FALLBACK) {
+        if (
+          (response.total || 0) === 0 &&
+          page === 1 &&
+          ENABLE_LOCAL_DATA_FALLBACK
+        ) {
           await applyDefaultOhioFallback();
           return;
         }
         setListPages(response.pages || 1);
         setListPage(page);
+        setTotalInView(response.total || 0);
         setStations((prev) =>
           append
             ? dedupeStations([...prev, ...response.stations])
@@ -232,6 +224,7 @@ export default function HomePage() {
       );
       setListPages(fallback.pages || 1);
       setListPage(page);
+      setTotalInView(fallback.total || 0);
       setStations((prev) =>
         append
           ? dedupeStations([...prev, ...fallback.stations])
@@ -239,32 +232,33 @@ export default function HomePage() {
       );
       setClusters([]);
     },
-    [center, lowZoomClusterMode, nearMeMode, selectedFuel, userLocation, viewport],
+    [
+      center,
+      lowZoomClusterMode,
+      nearMeMode,
+      selectedFuel,
+      userLocation,
+      viewport,
+    ],
   );
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE_LIST);
     setListPage(1);
-
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (inFlightControllerRef.current) inFlightControllerRef.current.abort();
-
     const controller = new AbortController();
     inFlightControllerRef.current = controller;
-
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
         await fetchListPage(1, false, controller.signal);
       } catch (error: any) {
-        if (error?.code !== "ERR_CANCELED") {
-          console.error(error);
-        }
+        if (error?.code !== "ERR_CANCELED") console.error(error);
       } finally {
         setLoading(false);
       }
     }, 260);
-
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       controller.abort();
@@ -285,9 +279,7 @@ export default function HomePage() {
 
   const handleSearch = () => {
     if (searchQuery.trim().length < 2) return;
-    router.push(
-      `/search?q=${encodeURIComponent(searchQuery.trim())}&state=OH`,
-    );
+    router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}&state=OH`);
   };
 
   const handleModeToggle = useCallback(() => {
@@ -318,7 +310,13 @@ export default function HomePage() {
   }, [selectedFuel, stations]);
 
   const priceRanges = useMemo(() => {
-    const fuels: FuelType[] = ["regular", "midgrade", "premium", "diesel", "e85"];
+    const fuels: FuelType[] = [
+      "regular",
+      "midgrade",
+      "premium",
+      "diesel",
+      "e85",
+    ];
     const ranges: Partial<
       Record<FuelType, { min: number | null; max: number | null }>
     > = {};
@@ -347,6 +345,9 @@ export default function HomePage() {
     [stations, visibleCount],
   );
 
+  // display count: prefer API total, fall back to loaded array length
+  const displayTotal = totalInView > 0 ? totalInView : stations.length;
+
   const renderStationList = () => (
     <div className="space-y-2 p-3">
       {loading
@@ -357,9 +358,7 @@ export default function HomePage() {
             <StationListCard
               key={station._id}
               station={station}
-              distance={
-                toMiles(station.distanceKm ?? undefined) ?? undefined
-              }
+              distance={toMiles(station.distanceKm ?? undefined) ?? undefined}
               selectedFuel={selectedFuel}
               isActive={station._id === selectedStationId}
               onClick={() => {
@@ -414,10 +413,19 @@ export default function HomePage() {
             </div>
             <div>
               <p className="text-base font-black leading-tight">Fuelify</p>
-              <p className="text-xs text-[var(--text-muted)]">
-                {stations.length} stations{" "}
-                {nearMeMode ? "within 10km" : "in view"}
-              </p>
+              {/* ─── Live station count with pulse dot ─── */}
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent-primary)] opacity-50" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent-primary)]" />
+                </span>
+                <span className="text-xs font-semibold tabular-nums text-[var(--text-secondary)]">
+                  {loading ? "—" : displayTotal.toLocaleString()}
+                  <span className="ml-1 font-normal text-[var(--text-muted)]">
+                    {nearMeMode ? "within 10km" : "in view"}
+                  </span>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -538,10 +546,8 @@ export default function HomePage() {
             <span className="text-base leading-none">↓</span>
             <span>
               Best{" "}
-              <strong>
-                ${bestStation.prices[selectedFuel]!.toFixed(2)}
-              </strong>{" "}
-              · {bestStation.name}
+              <strong>${bestStation.prices[selectedFuel]!.toFixed(2)}</strong> ·{" "}
+              {bestStation.name}
               {bestStation.distanceKm !== undefined && (
                 <span className="ml-1 opacity-80">
                   {(bestStation.distanceKm * 0.621371).toFixed(1)} mi
@@ -556,7 +562,7 @@ export default function HomePage() {
         <BottomSheet
           isOpen={sheetOpen}
           onClose={() => setSheetOpen(false)}
-          title={`Stations ${nearMeMode ? "within 10km" : "in view"} (${stations.length})`}
+          title={`Stations ${nearMeMode ? "within 10km" : "in view"} (${displayTotal.toLocaleString()})`}
           snapPoints={[130, "50vh", "90vh"]}
         >
           {renderStationList()}
@@ -575,7 +581,7 @@ export default function HomePage() {
             ].join(" ")}
           >
             <Fuel className="h-4 w-4" />
-            See {stations.length} Stations
+            See {displayTotal.toLocaleString()} Stations
           </button>
         )}
       </div>

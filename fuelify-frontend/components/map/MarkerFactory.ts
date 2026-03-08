@@ -1,3 +1,4 @@
+//fuelify-frontend/components/map/MarkerFactory.ts
 import { getBrandLogoUrl, FALLBACK_URL } from '@/components/ui/BrandLogo';
 import type { FuelType, Station } from '@/types';
 
@@ -25,6 +26,23 @@ export const getStationPrice = (station: Station, fuel: FuelType): number | null
   return p !== null && p !== undefined ? p : null;
 };
 
+// ─── Price tier → ring color ──────────────────────────────────────────────────
+const getPriceTierColor = (price: number | null): { ring: string; glow: string; label: string } => {
+  if (price === null) return { ring: '#94a3b8', glow: 'rgba(148,163,184,0.35)', label: '#64748b' };
+  if (price < 3.00)   return { ring: '#22c55e', glow: 'rgba(34,197,94,0.35)',   label: '#16a34a' }; // green — cheap
+  if (price < 3.50)   return { ring: '#f59e0b', glow: 'rgba(245,158,11,0.35)',  label: '#d97706' }; // amber — mid
+  return               { ring: '#ef4444', glow: 'rgba(239,68,68,0.35)',          label: '#dc2626' }; // red — expensive
+};
+
+// ─── Size tier by count ───────────────────────────────────────────────────────
+const getClusterSize = (count: number): { size: number; fontSize: number; subSize: number; ringWidth: number } => {
+  if (count >= 100) return { size: 80, fontSize: 17, subSize: 10, ringWidth: 3 };
+  if (count >= 50)  return { size: 68, fontSize: 15, subSize: 10, ringWidth: 3 };
+  if (count >= 20)  return { size: 58, fontSize: 14, subSize: 9.5, ringWidth: 2.5 };
+  if (count >= 10)  return { size: 50, fontSize: 13, subSize: 9,   ringWidth: 2.5 };
+  return                   { size: 42, fontSize: 12, subSize: 8.5, ringWidth: 2 };
+};
+
 export const createMarkerElement = (
   station: Station,
   fuel: FuelType,
@@ -41,7 +59,9 @@ export const createMarkerElement = (
   const bg = isSelected ? colors.selectedBg : colors.bg;
   const border = isSelected ? colors.selectedBorder : colors.border;
   const textColor = isSelected ? '#fff' : colors.text;
-  const shadow = isSelected ? '0 3px 14px rgba(255,99,71,0.40)' : '0 1px 6px rgba(0,0,0,0.12)';
+  const shadow = isSelected
+    ? '0 3px 14px rgba(255,99,71,0.40)'
+    : '0 1px 6px rgba(0,0,0,0.12)';
 
   if (hasPrice) {
     el.innerHTML =
@@ -68,30 +88,93 @@ export const createClusterMarkerElement = (
   const el = document.createElement('div');
   el.className = 'fuelify-cluster-marker';
 
-  const size = count >= 50 ? 52 : count >= 20 ? 46 : 40;
-  const subtitle = minPrice !== null ? `$${minPrice.toFixed(2)} min` : `${count} stations`;
-  const main = count >= 100 ? '99+' : String(count);
+  const { size, fontSize, subSize, ringWidth } = getClusterSize(count);
+  const { ring, glow, label } = getPriceTierColor(minPrice);
+
+  const countLabel  = count >= 100 ? '99+' : String(count);
+  const priceLabel  = minPrice !== null ? `$${minPrice.toFixed(2)}` : '—';
+  const stationsLabel = count === 1 ? 'station' : 'stations';
+
+  // inner disc is slightly smaller — ring is the gap between outer and inner
+  const innerSize = size - ringWidth * 2 - 6;
 
   el.innerHTML = `
     <div style="
-      width:${size}px;
-      height:${size}px;
-      border-radius:999px;
-      border:2px solid ${colors.selectedBorder};
-      background:${colors.selectedBg};
-      color:#fff;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      box-shadow:0 6px 20px rgba(0,0,0,0.24);
-      line-height:1;
-      user-select:none;
-      cursor:pointer;
-      transform:translateZ(0);
+      position: relative;
+      width: ${size}px;
+      height: ${size}px;
+      cursor: pointer;
+      user-select: none;
+      transform: translateZ(0);
+      will-change: transform;
     ">
-      <span style="font-weight:900;font-size:13px">${main}</span>
-      <span style="font-weight:700;font-size:9px;opacity:0.92;margin-top:2px">${subtitle}</span>
+      <!-- Glow halo -->
+      <div style="
+        position: absolute;
+        inset: -6px;
+        border-radius: 999px;
+        background: ${glow};
+        filter: blur(6px);
+        pointer-events: none;
+      "></div>
+
+      <!-- Outer ring -->
+      <div style="
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        border: ${ringWidth}px solid ${ring};
+        background: transparent;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12);
+      "></div>
+
+      <!-- Inner pill body -->
+      <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: ${innerSize}px;
+        height: ${innerSize}px;
+        border-radius: 999px;
+        background: ${colors.selectedBg};
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+      ">
+        <!-- Count -->
+        <span style="
+          font-size: ${fontSize}px;
+          font-weight: 900;
+          color: #fff;
+          line-height: 1;
+          letter-spacing: -0.04em;
+          font-variant-numeric: tabular-nums;
+        ">${countLabel}</span>
+
+        <!-- Price badge -->
+        <span style="
+          font-size: ${subSize}px;
+          font-weight: 700;
+          color: ${ring};
+          line-height: 1;
+          letter-spacing: -0.02em;
+          font-variant-numeric: tabular-nums;
+        ">${priceLabel}</span>
+
+        <!-- "stations" label — only on large enough bubbles -->
+        ${size >= 58 ? `<span style="
+          font-size: 7.5px;
+          font-weight: 600;
+          color: rgba(255,255,255,0.5);
+          line-height: 1;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          margin-top: 1px;
+        ">${stationsLabel}</span>` : ''}
+      </div>
     </div>
   `;
 

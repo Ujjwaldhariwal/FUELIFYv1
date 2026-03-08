@@ -43,7 +43,7 @@ async function seedFixture() {
         zip: FIXTURE.zip,
         country: 'US',
       },
-      coordinates: { lat: FIXTURE.lat, lng: FIXTURE.lng },
+coordinates: { type: 'Point', coordinates: [FIXTURE.lng, FIXTURE.lat] }, 
       phone: '+1-555-000-1111',
       website: 'https://fuelify.example/dev',
       hours: 'Mon-Sun 6am-11pm',

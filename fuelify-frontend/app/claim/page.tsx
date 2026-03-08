@@ -49,14 +49,15 @@ function ClaimLandingPageContent() {
   }, [prefilledId, router]);
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
-      <div className="mx-auto max-w-2xl px-4 pb-8 pt-16 text-center">
-        <div className="mb-6 flex items-center justify-center gap-2">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-primary)] px-4 py-10 text-[var(--text-primary)]">
+      <div className="w-full max-w-2xl text-center">
+
+        <div className="mb-4 flex items-center justify-center gap-2">
           <Fuel className="h-8 w-8 text-[var(--accent-primary)]" />
           <span className="text-2xl font-bold text-[var(--text-primary)]">Fuelify</span>
         </div>
 
-        <h1 className="mb-3 text-3xl font-extrabold leading-tight">
+        <h1 className="mb-2 text-3xl font-extrabold leading-tight">
           Your station.
           <br />
           Your prices.
@@ -64,13 +65,64 @@ function ClaimLandingPageContent() {
           <span className="text-[var(--accent-primary)]">Free.</span>
         </h1>
 
-        <p className="mb-8 text-base text-[var(--text-secondary)]">
+        <p className="mb-5 text-base text-[var(--text-secondary)]">
           Thousands of drivers search for gas prices near them every day.
           <br />
           Make sure they find you first.
         </p>
 
-        <div className="mb-10 grid grid-cols-1 gap-3 text-left">
+        {/* Search — prominent, above benefits */}
+        <h2 className="mb-2 text-lg font-semibold">Search for your gas station</h2>
+
+        <div className="relative mb-4">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search()}
+            placeholder="e.g. 'Marathon Killbuck' or '205 W Front St'"
+            className="min-h-[48px] w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] py-3.5 pl-10 pr-32 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+          />
+          <button
+            type="button"
+            onClick={search}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-[var(--accent-primary)] px-4 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+          >
+            Find Station
+          </button>
+        </div>
+
+        {loading && (
+          <div className="flex justify-center py-4">
+            <LoadingSpinner />
+          </div>
+        )}
+
+        {results.length > 0 && (
+          <div className="mb-6 space-y-2 text-left">
+            {results.map((station) => (
+              <button
+                key={station._id}
+                type="button"
+                onClick={() => router.push(`/dashboard/claim/${station._id}`)}
+                className="group w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left transition-all hover:border-[var(--border-strong)] hover:bg-[var(--color-info-muted)]"
+              >
+                <div className="flex items-center gap-3">
+                  <BrandLogo brand={station.brand} size={44} />
+                  <div>
+                    <p className="font-semibold text-[var(--text-primary)]">{station.name}</p>
+                    <p className="text-xs text-[var(--text-secondary)]">{formatAddress(station)}</p>
+                  </div>
+                  <span className="ml-auto flex-shrink-0 text-xs font-semibold text-[var(--accent-primary)]">Claim →</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Benefits — below search */}
+        <div className="grid grid-cols-1 gap-3 text-left">
           {[
             {
               icon: <Zap className="h-5 w-5 text-[var(--accent-primary)]" />,
@@ -99,56 +151,6 @@ function ClaimLandingPageContent() {
           ))}
         </div>
 
-        <h2 className="mb-3 text-lg font-semibold">Search for your gas station</h2>
-
-        <div className="relative mb-2">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && search()}
-            placeholder="e.g. 'Marathon Killbuck' or '205 W Front St'"
-            className="min-h-[48px] w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] py-3.5 pl-10 pr-32 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
-          />
-          <button
-            type="button"
-            onClick={search}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-[var(--accent-primary)] px-4 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-95"
-          >
-            Find Station
-          </button>
-        </div>
-
-        {loading && (
-          <div className="flex justify-center py-6">
-            <LoadingSpinner />
-          </div>
-        )}
-
-        {results.length > 0 && (
-          <div className="mt-4 space-y-2 text-left">
-            {results.map((station) => (
-              <button
-                key={station._id}
-                type="button"
-                onClick={() => router.push(`/dashboard/claim/${station._id}`)}
-                className="group w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left transition-all hover:border-[var(--border-strong)] hover:bg-[var(--color-info-muted)]"
-              >
-                <div className="flex items-center gap-3">
-                  <BrandLogo brand={station.brand} size={44} />
-                  <div>
-                    <p className="font-semibold text-[var(--text-primary)] group-hover:text-[var(--text-primary)]">{station.name}</p>
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      {formatAddress(station)}
-                    </p>
-                  </div>
-                  <span className="ml-auto flex-shrink-0 text-xs font-semibold text-[var(--accent-primary)]">Claim →</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

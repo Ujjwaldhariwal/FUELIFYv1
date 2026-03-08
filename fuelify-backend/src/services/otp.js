@@ -38,12 +38,22 @@ const sendOtp = async (phone, otp) => {
   // Normalize phone to E.164 format - assume US if no country code
   const normalized = phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`;
 
-  const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  await client.messages.create({
-    body: `Your Fuelify verification code is: ${otp}. Expires in 10 minutes.`,
-    from: process.env.TWILIO_PHONE_NUMBER,
-    to: normalized,
-  });
+  try {
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    await client.messages.create({
+      body: `Your Fuelify verification code is: ${otp}. Expires in 10 minutes.`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: normalized,
+    });
+  } catch (error) {
+    if (isNonProduction()) {
+      return { success: true, bypass: true, fallback: 'TWILIO_ERROR' };
+    }
+    const deliveryError = new Error('Failed to deliver OTP');
+    deliveryError.status = 502;
+    deliveryError.code = 'OTP_DELIVERY_FAILED';
+    throw deliveryError;
+  }
 
   return { success: true };
 };

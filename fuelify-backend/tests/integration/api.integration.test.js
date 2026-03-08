@@ -18,6 +18,7 @@ const Owner = require('../../src/models/Owner');
 const PriceHistory = require('../../src/models/PriceHistory');
 const Claim = require('../../src/models/Claim');
 const PriceReport = require('../../src/models/PriceReport');
+const placesAPI = require('../../src/services/placesAPI');
 
 let mongoServer;
 const TEST_DB_NAME = 'fuelify_integration_tests';
@@ -160,6 +161,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  jest.restoreAllMocks();
   await Promise.all([
     Station.deleteMany({}),
     Owner.deleteMany({}),
@@ -991,6 +993,117 @@ describe('Fuelify backend integration', () => {
     expect(incompleteRes.status).toBe(200);
     const names = incompleteRes.body.stations.map((item) => item.name);
     expect(names).not.toContain('Address Fix Station');
+  });
+
+  test('GET /api/admin/stations/incomplete/summary returns aggregate data quality stats', async () => {
+    const admin = await makeAdminOwner();
+    const token = signOwnerToken(admin._id);
+
+    await makeStation({
+      name: 'Summary Complete Station',
+      slug: 'summary-complete-station-columbus-oh',
+      regular: 3.211,
+      status: 'UNCLAIMED',
+    });
+
+    await Station.create({
+      slug: 'summary-incomplete-station-columbus-oh',
+      name: 'Summary Incomplete Station',
+      brand: 'bp',
+      placeId: 'test-place-001',
+      address: {
+        street: '',
+        city: 'Columbus',
+        state: 'OH',
+        zip: '43215',
+        country: 'US',
+      },
+      coordinates: { type: 'Point', coordinates: [-82.9988, 39.9612] },
+      status: 'UNCLAIMED',
+      prices: { regular: null, midgrade: null, premium: null, diesel: null, e85: null },
+      dataSource: 'GOOGLE_PLACES',
+    });
+
+    const res = await request(app)
+      .get('/api/admin/stations/incomplete/summary')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalStations).toBe(2);
+    expect(res.body.incompleteTotal).toBe(1);
+    expect(res.body.withPlaceId).toBe(1);
+    expect(res.body.withoutPlaceId).toBe(0);
+    expect(Array.isArray(res.body.byStatus)).toBe(true);
+    expect(Array.isArray(res.body.byDataSource)).toBe(true);
+  });
+
+  test('POST /api/admin/stations/incomplete/autofix supports dry-run and execute address fixes', async () => {
+    const admin = await makeAdminOwner();
+    const token = signOwnerToken(admin._id);
+
+    const station = await Station.create({
+      slug: 'autofix-incomplete-station-columbus-oh',
+      name: 'Autofix Incomplete Station',
+      brand: 'shell',
+      placeId: 'test-place-autofix-001',
+      address: {
+        street: '',
+        city: '',
+        state: 'OH',
+        zip: '',
+        country: 'US',
+      },
+      coordinates: { type: 'Point', coordinates: [-82.9988, 39.9612] },
+      status: 'UNCLAIMED',
+      prices: { regular: null, midgrade: null, premium: null, diesel: null, e85: null },
+      dataSource: 'GOOGLE_PLACES',
+    });
+
+    const placeDetailsSpy = jest.spyOn(placesAPI, 'getPlaceDetails').mockResolvedValue({
+      place_id: 'test-place-autofix-001',
+      name: 'Autofix Incomplete Station',
+      formatted_address: '205 W Front St, Columbus, OH 43215, USA',
+      address_components: [
+        { long_name: '205', short_name: '205', types: ['street_number'] },
+        { long_name: 'W Front St', short_name: 'W Front St', types: ['route'] },
+        { long_name: 'Columbus', short_name: 'Columbus', types: ['locality', 'political'] },
+        { long_name: 'Ohio', short_name: 'OH', types: ['administrative_area_level_1', 'political'] },
+        { long_name: '43215', short_name: '43215', types: ['postal_code'] },
+        { long_name: 'United States', short_name: 'US', types: ['country', 'political'] },
+      ],
+    });
+
+    const savedKey = process.env.GOOGLE_PLACES_API_KEY;
+    process.env.GOOGLE_PLACES_API_KEY = 'test-google-places-key';
+
+    const dryRunRes = await request(app)
+      .post('/api/admin/stations/incomplete/autofix')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ dryRun: true, limit: 50 });
+
+    expect(dryRunRes.status).toBe(200);
+    expect(dryRunRes.body.mode).toBe('DRY_RUN');
+    expect(dryRunRes.body.fixed).toBe(1);
+
+    const stationAfterDryRun = await Station.findById(station._id).lean();
+    expect(stationAfterDryRun.address.street).toBe('');
+
+    const executeRes = await request(app)
+      .post('/api/admin/stations/incomplete/autofix')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ dryRun: false, limit: 50 });
+
+    process.env.GOOGLE_PLACES_API_KEY = savedKey || '';
+
+    expect(executeRes.status).toBe(200);
+    expect(executeRes.body.mode).toBe('EXECUTE');
+    expect(executeRes.body.fixed).toBe(1);
+
+    const stationAfterExecute = await Station.findById(station._id).lean();
+    expect(stationAfterExecute.address.street).toBe('205 W Front St');
+    expect(stationAfterExecute.address.city).toBe('Columbus');
+    expect(stationAfterExecute.address.state).toBe('OH');
+    expect(placeDetailsSpy).toHaveBeenCalled();
   });
 });
 

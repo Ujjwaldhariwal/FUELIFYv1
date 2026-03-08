@@ -22,7 +22,8 @@ const getPlaceDetails = async (placeId) => {
   const url = `${BASE_URL}/details/json`;
   const params = {
     place_id: placeId,
-    fields: 'place_id,name,formatted_address,geometry,formatted_phone_number,website,opening_hours',
+    fields:
+      'place_id,name,formatted_address,address_components,geometry,formatted_phone_number,website,opening_hours',
     key: process.env.GOOGLE_PLACES_API_KEY,
   };
 

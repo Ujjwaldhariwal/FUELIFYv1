@@ -111,3 +111,41 @@ Body/Params: `{ stationId: string — MongoDB ObjectId path param }`
 | --- | --- | --- |
 | 400 | `INVALID_STATION_ID` | `stationId` is malformed |
 | 404 | `STATION_NOT_FOUND` | station does not exist |
+
+## 2026-03-08 - Sprint 6 data quality automation
+
+### Added
+- `GET /api/admin/stations/incomplete/summary`
+  - Purpose: provide quick data-quality health metrics for admin dashboards.
+  - Response shape:
+    - `totalStations: number`
+    - `incompleteTotal: number`
+    - `incompleteRatePct: number`
+    - `withPlaceId: number`
+    - `withoutPlaceId: number`
+    - `byStatus: Array<{ status: string, count: number }>`
+    - `byDataSource: Array<{ source: string, count: number }>`
+
+- `POST /api/admin/stations/incomplete/autofix`
+  - Purpose: auto-repair incomplete station addresses using Google Place details.
+  - Request body:
+    - `dryRun?: boolean` (default `true`)
+    - `limit?: number` (max `500`, default `200`)
+    - `state?: string` (optional 2-letter state filter)
+    - `onlyWithPlaceId?: boolean` (default `true`)
+  - Response shape:
+    - `mode: "DRY_RUN" | "EXECUTE"`
+    - `totalCandidates: number`
+    - `scanned: number`
+    - `fixed: number`
+    - `skippedNoPlaceId: number`
+    - `skippedNoDetails: number`
+    - `skippedNoAddress: number`
+    - `errors: number`
+    - `remainingIncomplete: number`
+    - `sample: Array<{ stationId: string, name: string, previousAddress?: object, nextAddress: object }>`
+
+### Errors
+| Status | Code | Condition |
+| --- | --- | --- |
+| 503 | `N/A` | `GOOGLE_PLACES_API_KEY` missing for execute mode |

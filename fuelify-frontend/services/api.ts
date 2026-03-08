@@ -238,6 +238,25 @@ export const confirmPrice = async (
   return data;
 };
 
+export interface SubmitPricePayload {
+  stationId: string;
+  fuelType: 'petrol' | 'diesel' | 'premium' | 'cng' | 'ev';
+  price: number;
+}
+
+export interface SubmitPriceResponse {
+  reportId: string;
+  stationId: string;
+  fuelType: 'petrol' | 'diesel' | 'premium' | 'cng' | 'ev';
+  price: number;
+  reportedAt: string;
+}
+
+export const submitPriceReport = async (payload: SubmitPricePayload): Promise<SubmitPriceResponse> => {
+  const { data } = await api.post('/prices', payload);
+  return data;
+};
+
 export const login = async (
   identifier: string,
   password: string

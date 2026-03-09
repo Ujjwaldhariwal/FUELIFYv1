@@ -88,95 +88,79 @@ export const createClusterMarkerElement = (
   const el = document.createElement('div');
   el.className = 'fuelify-cluster-marker';
 
-  const { size, fontSize, subSize, ringWidth } = getClusterSize(count);
-  const { ring, glow, label } = getPriceTierColor(minPrice);
+  // ─── Price tier accent color ──────────────────────────────────────────────
+  const accentColor =
+    minPrice === null  ? '#94a3b8'
+    : minPrice < 3.00  ? '#22c55e'
+    : minPrice < 3.50  ? '#f59e0b'
+    :                    '#ef4444';
 
-  const countLabel  = count >= 100 ? '99+' : String(count);
-  const priceLabel  = minPrice !== null ? `$${minPrice.toFixed(2)}` : '—';
-  const stationsLabel = count === 1 ? 'station' : 'stations';
+  const countLabel = count > 999 ? '999+' : count > 99 ? '99+' : String(count);
+  const priceLabel = minPrice !== null ? `$${minPrice.toFixed(2)}` : null;
 
-  // inner disc is slightly smaller — ring is the gap between outer and inner
-  const innerSize = size - ringWidth * 2 - 6;
-
-  el.innerHTML = `
+  // ─── Pill body — mirrors the individual price marker exactly ─────────────
+  const pill = `
     <div style="
-      position: relative;
-      width: ${size}px;
-      height: ${size}px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px 3px 3px;
+      background: ${colors.bg};
+      border: 1.5px solid ${accentColor};
+      border-radius: 20px;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15), 0 0 0 3px ${accentColor}22;
       cursor: pointer;
       user-select: none;
-      transform: translateZ(0);
-      will-change: transform;
     ">
-      <!-- Glow halo -->
+      <!-- Count badge — replaces logo slot -->
       <div style="
-        position: absolute;
-        inset: -6px;
-        border-radius: 999px;
-        background: ${glow};
-        filter: blur(6px);
-        pointer-events: none;
-      "></div>
-
-      <!-- Outer ring -->
-      <div style="
-        position: absolute;
-        inset: 0;
-        border-radius: 999px;
-        border: ${ringWidth}px solid ${ring};
-        background: transparent;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12);
-      "></div>
-
-      <!-- Inner pill body -->
-      <div style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: ${innerSize}px;
-        height: ${innerSize}px;
-        border-radius: 999px;
-        background: ${colors.selectedBg};
+        min-width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: ${accentColor};
         display: flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 1px;
+        flex-shrink: 0;
+        padding: 0 4px;
       ">
-        <!-- Count -->
         <span style="
-          font-size: ${fontSize}px;
+          font-size: 9.5px;
           font-weight: 900;
           color: #fff;
           line-height: 1;
-          letter-spacing: -0.04em;
+          letter-spacing: -0.03em;
           font-variant-numeric: tabular-nums;
         ">${countLabel}</span>
-
-        <!-- Price badge -->
-        <span style="
-          font-size: ${subSize}px;
-          font-weight: 700;
-          color: ${ring};
-          line-height: 1;
-          letter-spacing: -0.02em;
-          font-variant-numeric: tabular-nums;
-        ">${priceLabel}</span>
-
-        <!-- "stations" label — only on large enough bubbles -->
-        ${size >= 58 ? `<span style="
-          font-size: 7.5px;
-          font-weight: 600;
-          color: rgba(255,255,255,0.5);
-          line-height: 1;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          margin-top: 1px;
-        ">${stationsLabel}</span>` : ''}
       </div>
+
+      <!-- Price or fallback label -->
+      <span style="
+        font-size: 11.5px;
+        font-weight: 800;
+        color: ${colors.text};
+        letter-spacing: -0.03em;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      ">${priceLabel ?? 'stations'}</span>
     </div>
   `;
 
+  // ─── Caret tip — same as individual hasPrice marker ───────────────────────
+  const caret = `
+    <div style="
+      width: 6px;
+      height: 6px;
+      margin: -3.5px auto 0;
+      background: ${colors.bg};
+      border-left: 1.5px solid ${accentColor};
+      border-bottom: 1.5px solid ${accentColor};
+      transform: rotate(-45deg);
+    "></div>
+  `;
+
+  el.innerHTML = pill + caret;
   return el;
 };
+

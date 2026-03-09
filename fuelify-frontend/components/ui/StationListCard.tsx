@@ -151,11 +151,11 @@ export const StationListCard = memo(
           </div>
 
           {hasAnySecondary && (
-            <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-              {secondaryFuels.map((f) => (
-                <span key={f.key} className="tabular-nums">
-                  <span className="font-medium">{f.label}</span>{' '}
-                  <span className={f.hasPrice ? 'text-[var(--text-secondary)]' : ''}>{f.price}</span>
+            <div className="flex items-center gap-2.5">
+              {secondaryFuels.filter((f) => f.hasPrice).map((f) => (
+                <span key={f.key} className="flex items-baseline gap-0.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{f.label}</span>
+                  <span className="text-[11.5px] font-bold tabular-nums text-[var(--text-secondary)]">{f.price}</span>
                 </span>
               ))}
             </div>

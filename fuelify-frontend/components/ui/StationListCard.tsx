@@ -110,9 +110,18 @@ export const StationListCard = memo(
             <p className="truncate text-sm font-bold text-[var(--text-primary)] group-hover:text-[var(--accent-primary)] transition-colors leading-snug">
               {station.name}
             </p>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+            <div className="mt-0.5 flex items-center gap-1 text-xs text-[var(--text-secondary)]">
               <MapPin className="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
               <span className="truncate">{addressText}</span>
+              {timeSince && (
+                <>
+                  <span className="shrink-0 text-[var(--text-muted)]">·</span>
+                  <span className={`flex shrink-0 items-center gap-0.5 ${freshnessColor}`}>
+                    <Clock className="h-2.5 w-2.5" />
+                    {timeSince}
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -135,32 +144,21 @@ export const StationListCard = memo(
           </div>
         </div>
 
-        <div className="mt-2 flex items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
-          <div className="flex items-center gap-2.5 text-[11px]">
+        {(distance !== undefined || hasAnySecondary) && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-2 border-t border-[var(--border)]">
             {distance !== undefined && (
-              <span className="font-semibold text-[var(--text-secondary)] tabular-nums">
+              <span className="text-[11px] font-semibold tabular-nums text-[var(--text-secondary)]">
                 {distance.toFixed(1)} mi
               </span>
             )}
-            {timeSince && (
-              <span className={`flex items-center gap-0.5 ${freshnessColor}`}>
-                <Clock className="h-2.5 w-2.5" />
-                {timeSince}
+            {secondaryFuels.filter((f) => f.hasPrice).map((f) => (
+              <span key={f.key} className="flex items-baseline gap-0.5">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{f.label}</span>
+                <span className="text-[11.5px] font-bold tabular-nums text-[var(--text-secondary)]">{f.price}</span>
               </span>
-            )}
+            ))}
           </div>
-
-          {hasAnySecondary && (
-            <div className="flex items-center gap-2.5">
-              {secondaryFuels.filter((f) => f.hasPrice).map((f) => (
-                <span key={f.key} className="flex items-baseline gap-0.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{f.label}</span>
-                  <span className="text-[11.5px] font-bold tabular-nums text-[var(--text-secondary)]">{f.price}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        )}
       </button>
     );
   }

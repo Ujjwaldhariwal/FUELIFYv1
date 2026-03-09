@@ -1,3 +1,5 @@
+//fuelify-frontend/app/layout.tsx
+
 import type { Metadata } from 'next';
 import { DM_Sans } from 'next/font/google';
 import './globals.css';
@@ -20,9 +22,27 @@ export const metadata: Metadata = {
   openGraph: { siteName: 'Fuelify', type: 'website' },
 };
 
+// ─── Blocking theme script — runs before paint, eliminates flash ─────────────
+// Reads localStorage synchronously and sets the correct class on <html>
+// BEFORE React hydrates. dangerouslySetInnerHTML is intentional here.
+const themeScript = `
+(function(){
+  try {
+    var t = localStorage.getItem('fuelify_theme');
+    if (t === 'light') document.documentElement.classList.remove('dark');
+    else document.documentElement.classList.add('dark');
+  } catch(e) {}
+})();
+`;
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${dmSans.variable}`}>
+    <html lang="en" className={`dark ${dmSans.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Blocking script — must be first in <head>, no defer/async */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased font-[family-name:var(--font-dm-sans)]">
         <ThemeProvider>
           <ErrorBoundary>

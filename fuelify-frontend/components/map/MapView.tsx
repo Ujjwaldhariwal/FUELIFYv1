@@ -1,17 +1,17 @@
-//fuelify-frontend/components/map/MapView.tsx
-
+// components/map/MapView.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import useSupercluster from "use-supercluster";
 import type { FuelType, Station, StationCluster } from "@/types";
 import {
-  createClusterMarkerElement,
   createMarkerElement,
   getStationPrice,
   readMarkerColors,
 } from "./MarkerFactory";
+import { createClusterMarkerElement } from "./ClusterMarkerFactory";
 
 const TILE_STYLES: Record<string, maplibregl.StyleSpecification> = {
   light: {
@@ -74,105 +74,8 @@ interface MapViewProps {
   onMapInteraction?: () => void;
 }
 
-type DisplayPoint =
-  | { kind: "station"; station: Station; lat: number; lng: number }
-  | {
-      kind: "cluster";
-      lat: number;
-      lng: number;
-      count: number;
-      minPrice: number | null;
-    };
-
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
-
-const getClusterStepDegrees = (zoom: number) => {
-  if (zoom >= 11) return 0;     // individual markers
-  if (zoom >= 10) return 0.08;
-  if (zoom >= 9)  return 0.16;
-  if (zoom >= 8)  return 0.35;
-  if (zoom >= 6)  return 1.2;   // county-level
-  if (zoom >= 4)  return 4.0;   // state-level
-  return 12.0;                   // continent — everything collapses to 1-3 bubbles
-};
-
-
-const buildDisplayPoints = (
-  stations: Station[],
-  selectedFuel: FuelType,
-  zoom: number,
-): DisplayPoint[] => {
-  const step = getClusterStepDegrees(zoom);
-  if (step === 0) {
-    return stations
-      .map((station) => {
-        const [lng, lat] = station.coordinates.coordinates;
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return { kind: "station", station, lat, lng } as DisplayPoint;
-      })
-      .filter((item): item is DisplayPoint => item !== null);
-  }
-
-  const buckets = new Map<
-    string,
-    {
-      count: number;
-      latSum: number;
-      lngSum: number;
-      minPrice: number | null;
-      station: Station | null;
-    }
-  >();
-
-  for (const station of stations) {
-    const [lng, lat] = station.coordinates.coordinates;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    const latBucket = Math.floor(lat / step);
-    const lngBucket = Math.floor(lng / step);
-    const key = `${latBucket}:${lngBucket}`;
-    const price = getStationPrice(station, selectedFuel);
-    const existing = buckets.get(key);
-    if (!existing) {
-      buckets.set(key, {
-        count: 1,
-        latSum: lat,
-        lngSum: lng,
-        minPrice: price,
-        station,
-      });
-      continue;
-    }
-    existing.count += 1;
-    existing.latSum += lat;
-    existing.lngSum += lng;
-    existing.minPrice =
-      existing.minPrice === null
-        ? price
-        : price === null
-          ? existing.minPrice
-          : Math.min(existing.minPrice, price);
-    existing.station = existing.station || station;
-  }
-
-  const points: DisplayPoint[] = [];
-  for (const bucket of buckets.values()) {
-    const lat = bucket.latSum / bucket.count;
-    const lng = bucket.lngSum / bucket.count;
-    if (bucket.count === 1 && bucket.station) {
-      points.push({ kind: "station", station: bucket.station, lat, lng });
-      continue;
-    }
-    points.push({
-      kind: "cluster",
-      lat,
-      lng,
-      count: bucket.count,
-      minPrice: bucket.minPrice,
-    });
-  }
-  return points;
-};
 
 export const MapView = ({
   stations,
@@ -193,9 +96,14 @@ export const MapView = ({
   const initRef = useRef(false);
   const suppressNextMoveRef = useRef(false);
   const appliedThemeRef = useRef<"light" | "dark">(theme || "dark");
-  const [zoomLevel, setZoomLevel] = useState(initialZoom);
 
-  // ─── Stable callback refs — prevents stale closures in init effect ───────
+  // Track Map State for Supercluster
+  const [zoomLevel, setZoomLevel] = useState(initialZoom);
+  const [bounds, setBounds] = useState<[number, number, number, number] | null>(
+    null,
+  );
+
+  // ─── Stable callback refs ─────────────────────────────────────────────────
   const onViewportChangeRef = useRef(onViewportChange);
   const onMapInteractionRef = useRef(onMapInteraction);
   useEffect(() => {
@@ -204,25 +112,60 @@ export const MapView = ({
   useEffect(() => {
     onMapInteractionRef.current = onMapInteraction;
   }, [onMapInteraction]);
-  // ─────────────────────────────────────────────────────────────────────────
 
   const initialCenterRef = useRef(center);
   const initialZoomRef = useRef(initialZoom);
 
-  const displayPoints = useMemo(() => {
-    if (useServerClusters && clusters.length > 0) {
-      return clusters.map((cluster) => ({
-        kind: "cluster" as const,
-        lat: cluster.center.lat,
-        lng: cluster.center.lng,
-        count: cluster.count,
-        minPrice: cluster.minPrice,
+  // ─── 1. Format Data for Supercluster ──────────────────────────────────────
+  const points = useMemo(() => {
+    return stations
+      .filter((station) => {
+        const [lng, lat] = station.coordinates.coordinates;
+        return Number.isFinite(lat) && Number.isFinite(lng);
+      })
+      .map((station) => ({
+        type: "Feature" as const,
+        properties: {
+          cluster: false,
+          stationId: station._id,
+          price: getStationPrice(station, selectedFuel),
+          station: station,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [
+            station.coordinates.coordinates[0],
+            station.coordinates.coordinates[1],
+          ] as [number, number],
+        },
       }));
-    }
-    return buildDisplayPoints(stations, selectedFuel, zoomLevel);
-  }, [clusters, selectedFuel, stations, useServerClusters, zoomLevel]);
+  }, [stations, selectedFuel]);
 
-  // ─── Init map ONCE — no center/callback deps to prevent rebuild flicker ──
+  // ─── 2. Initialize Supercluster Hook ──────────────────────────────────────
+  const { clusters: superclusters, supercluster } = useSupercluster({
+    points,
+    bounds: bounds ? bounds : undefined,
+    zoom: zoomLevel,
+    options: {
+      radius: 65, // Adjust this to change how close markers need to be to cluster
+      maxZoom: 12, // Stop clustering when zoomed in past 12
+      // Calculate the minPrice for each cluster group
+      map: (props) => ({ minPrice: props.price }),
+      reduce: (accumulated, props) => {
+        if (props.minPrice === null) return;
+        if (
+          accumulated.minPrice === null ||
+          accumulated.minPrice === undefined
+        ) {
+          accumulated.minPrice = props.minPrice;
+        } else {
+          accumulated.minPrice = Math.min(accumulated.minPrice, props.minPrice);
+        }
+      },
+    },
+  });
+
+  // ─── Init map ONCE ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current || initRef.current) return;
     initRef.current = true;
@@ -246,9 +189,12 @@ export const MapView = ({
     );
     map.scrollZoom.setWheelZoomRate(1 / 220);
 
-    const emitViewport = () => {
-      if (!onViewportChangeRef.current) return;
+    const updateMapState = () => {
       const b = map.getBounds();
+      setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+      setZoomLevel(map.getZoom());
+
+      if (!onViewportChangeRef.current) return;
       onViewportChangeRef.current({
         center: [map.getCenter().lat, map.getCenter().lng],
         zoom: map.getZoom(),
@@ -261,18 +207,11 @@ export const MapView = ({
       });
     };
 
-    map.on("load", () => {
-      setZoomLevel(map.getZoom());
-      emitViewport();
-    });
+    map.on("load", updateMapState);
 
     map.on("moveend", () => {
-      setZoomLevel(map.getZoom());
-      if (suppressNextMoveRef.current) {
-        suppressNextMoveRef.current = false;
-        return;
-      }
-      emitViewport();
+      updateMapState();
+      if (suppressNextMoveRef.current) suppressNextMoveRef.current = false;
     });
 
     map.on("dragstart", () => onMapInteractionRef.current?.());
@@ -287,10 +226,9 @@ export const MapView = ({
       mapRef.current = null;
       initRef.current = false;
     };
-  }, []); // ← empty deps: map inits once, never rebuilds
-  // ─────────────────────────────────────────────────────────────────────────
+  }, []);
 
-  // ─── Theme swap without map rebuild ──────────────────────────────────────
+  // ─── Theme & Fly-to Effects ───────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -299,9 +237,7 @@ export const MapView = ({
     appliedThemeRef.current = nextTheme;
     map.setStyle(TILE_STYLES[nextTheme]);
   }, [theme]);
-  // ─────────────────────────────────────────────────────────────────────────
 
-  // ─── Fly to center when it changes ───────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -315,13 +251,10 @@ export const MapView = ({
       zoom: clamp(map.getZoom(), 8, 14),
       speed: 1.2,
       curve: 1.42,
-      easing: (t) => t * (2 - t),
       essential: true,
     });
   }, [center]);
-  // ─────────────────────────────────────────────────────────────────────────
 
-  // ─── Fly to selected station ──────────────────────────────────────────────
   useEffect(() => {
     if (!selectedStationId) return;
     const map = mapRef.current;
@@ -336,64 +269,84 @@ export const MapView = ({
       zoom: clamp(Math.max(map.getZoom(), 12.75), 8, 15),
       speed: 1.08,
       curve: 1.42,
-      easing: (t) => t * (2 - t),
       essential: true,
     });
   }, [selectedStationId, stations]);
-  // ─────────────────────────────────────────────────────────────────────────
 
   // ─── Render markers ───────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !superclusters) return;
 
-    const renderMarkers = () => {
+const renderMarkers = () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
       const colors = readMarkerColors();
 
-      for (const point of displayPoints) {
-        if (point.kind === "cluster") {
-          const element = createClusterMarkerElement(
-            point.count,
-            point.minPrice,
-            colors,
-          );
+      for (const feature of superclusters) {
+        const [lng, lat] = feature.geometry.coordinates;
+
+        // 1. Check if it's a cluster first so TypeScript knows how to behave
+        if (feature.properties.cluster) {
+          // Cast the ID to a number to satisfy TypeScript
+          const clusterId = feature.id as number;
+          const pointCount = feature.properties.point_count;
+          
+          // Cast our custom injected property
+          const minPrice = (feature.properties as { minPrice: number | null }).minPrice;
+
+          const element = createClusterMarkerElement(pointCount, minPrice ?? null, colors);
+
           element.addEventListener("click", (e) => {
             e.stopPropagation();
             onMapInteractionRef.current?.();
-            map.easeTo({
-              center: [point.lng, point.lat],
-              zoom: clamp(map.getZoom() + 1.25, map.getZoom(), 14),
-              duration: 420,
-            });
+
+            // 2. Ensure supercluster is loaded before trying to use it
+            if (supercluster) {
+              const expansionZoom = Math.min(
+                supercluster.getClusterExpansionZoom(clusterId),
+                14
+              );
+
+              map.easeTo({
+                center: [lng, lat],
+                zoom: expansionZoom,
+                duration: 420,
+              });
+            }
           });
+
           const marker = new maplibregl.Marker({ element, anchor: "center" })
-            .setLngLat([point.lng, point.lat])
+            .setLngLat([lng, lat])
             .addTo(map);
           markersRef.current.push(marker);
-          continue;
-        }
+          
+        } else {
+          // 3. Since it's not a cluster, TypeScript now knows it's a single station
+          // We just cast it to access our custom station data
+          const station = (feature.properties as { station: Station }).station;
+          const isSelected = station._id === selectedStationId;
+          
+          const { element, hasPrice } = createMarkerElement(
+            station,
+            selectedFuel,
+            isSelected,
+            colors
+          );
 
-        const { station, lat, lng } = point;
-        const isSelected = station._id === selectedStationId;
-        const { element, hasPrice } = createMarkerElement(
-          station,
-          selectedFuel,
-          isSelected,
-          colors,
-        );
-        element.addEventListener("click", (e) => {
-          e.stopPropagation();
-          onStationSelect(station);
-        });
-        const marker = new maplibregl.Marker({
-          element,
-          anchor: hasPrice ? "bottom" : "center",
-        })
-          .setLngLat([lng, lat])
-          .addTo(map);
-        markersRef.current.push(marker);
+          element.addEventListener("click", (e) => {
+            e.stopPropagation();
+            onStationSelect(station);
+          });
+
+          const marker = new maplibregl.Marker({
+            element,
+            anchor: hasPrice ? "bottom" : "center",
+          })
+            .setLngLat([lng, lat])
+            .addTo(map);
+          markersRef.current.push(marker);
+        }
       }
     };
 
@@ -403,13 +356,12 @@ export const MapView = ({
       map.once("styledata", renderMarkers);
     }
   }, [
-    displayPoints,
+    superclusters,
     onStationSelect,
     selectedFuel,
     selectedStationId,
-    stations,
+    supercluster,
   ]);
-  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div

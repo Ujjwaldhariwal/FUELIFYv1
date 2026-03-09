@@ -13,6 +13,12 @@ interface StationListCardProps {
   isActive?: boolean;
 }
 
+const STATUS_DOT: Record<string, string> = {
+  VERIFIED:  'bg-[var(--color-success)]',
+  CLAIMED:   'bg-[#6366f1]',
+  UNCLAIMED: 'bg-[var(--text-muted)]',
+};
+
 const FUEL_LABEL: Record<FuelType, string> = {
   regular: 'Reg',
   midgrade: 'Mid',
@@ -90,8 +96,14 @@ export const StationListCard = memo(
         ].join(' ')}
       >
         <div className="flex items-center gap-3 w-full">
-          <div className="shrink-0">
+          <div className="relative shrink-0">
             <BrandLogo brand={station.brand} size={40} />
+            <span
+              className={[
+                'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg-card)]',
+                STATUS_DOT[station.status] ?? STATUS_DOT.UNCLAIMED,
+              ].join(' ')}
+            />
           </div>
 
           <div className="min-w-0 flex-1">

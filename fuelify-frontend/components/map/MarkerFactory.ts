@@ -43,11 +43,17 @@ export const createMarkerElement = (
   el.className = `fuelify-marker${isSelected ? " fuelify-marker--selected" : ""}`;
 
   const bg = isSelected ? colors.selectedBg : colors.bg;
-  const border = isSelected ? colors.selectedBorder : colors.border;
   const textColor = isSelected ? "#fff" : colors.text;
   const shadow = isSelected
     ? "0 3px 14px rgba(255,99,71,0.40)"
     : "0 1px 6px rgba(0,0,0,0.12)";
+
+  // Status-aware border: VERIFIED=green, CLAIMED=indigo, else default
+  let border = isSelected ? colors.selectedBorder : colors.border;
+  if (!isSelected) {
+    if (station.status === "VERIFIED") border = "rgba(16,185,129,0.80)";
+    else if (station.status === "CLAIMED") border = "rgba(99,102,241,0.65)";
+  }
 
   if (hasPrice) {
     el.innerHTML =

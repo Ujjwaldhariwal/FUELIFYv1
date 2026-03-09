@@ -7,7 +7,6 @@ interface PriceCardProps {
   price: number | null | undefined;
   isSelected?: boolean;
   isLowest?: boolean;
-  isFeatured?: boolean;
   priceData?: PriceReport | null;
 }
 
@@ -20,11 +19,11 @@ const LABELS: Record<FuelType, string> = {
 };
 
 const REPORT_LABELS: Record<PriceReport['fuelType'], string> = {
-  petrol: 'Petrol',
+  petrol: 'Regular',
   diesel: 'Diesel',
   premium: 'Premium',
   cng: 'CNG',
-  ev: 'EV',
+  ev: 'EV Charging',
 };
 
 export const PriceCard = ({
@@ -32,7 +31,6 @@ export const PriceCard = ({
   price,
   isSelected = false,
   isLowest = false,
-  isFeatured = false,
   priceData,
 }: PriceCardProps) => {
   const hasSupplementaryData = priceData !== undefined;
@@ -44,15 +42,14 @@ export const PriceCard = ({
       className={[
         'relative min-h-[92px] rounded-xl border p-3 transition-all duration-200',
         isLowest
-          ? 'border-emerald-500 bg-emerald-500/10'
+          ? 'border-[var(--color-success)] bg-[var(--color-success-muted)]'
           : isSelected
-            ? 'border-[var(--accent-blue)] bg-[var(--bg-elevated)]'
+            ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)]'
             : 'border-[var(--border)] bg-[var(--bg-card)]',
-        isFeatured ? 'shadow-lg shadow-[color:rgb(59_130_246_/_0.2)]' : '',
       ].join(' ')}
     >
       {isLowest && (
-        <span className="absolute right-2 top-2 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+        <span className="absolute right-2 top-2 rounded-full bg-[var(--color-success)] px-2 py-0.5 text-[10px] font-bold text-white">
           🔥 Best
         </span>
       )}

@@ -4,7 +4,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Fuel, Locate, Search, Sun, Moon } from "lucide-react";
+import { ArrowDown, Fuel, Locate, Search, Sun, Moon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { FuelType, Station, StationCluster } from "@/types";
 import {
@@ -543,7 +543,7 @@ export default function HomePage() {
               "focus:outline-none",
             ].join(" ")}
           >
-            <span className="text-base leading-none">↓</span>
+            <ArrowDown className="h-3.5 w-3.5 shrink-0" />
             <span>
               Best{" "}
               <strong>${bestStation.prices[selectedFuel]!.toFixed(2)}</strong> ·{" "}
@@ -573,7 +573,7 @@ export default function HomePage() {
             type="button"
             onClick={() => setSheetOpen(true)}
             className={[
-              "fixed bottom-6 left-1/2 z-[700] -translate-x-1/2",
+              "fixed bottom-6 left-1/2 z-[700] -translate-x-1/2 mb-safe",
               "flex h-12 items-center gap-2 rounded-full px-6",
               "bg-brand-gradient text-white text-sm font-bold",
               "shadow-[var(--shadow-accent)]",

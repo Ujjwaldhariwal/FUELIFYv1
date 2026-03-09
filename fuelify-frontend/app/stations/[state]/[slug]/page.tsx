@@ -32,11 +32,11 @@ const CARD_FUELS: Array<{
 ];
 
 const SUBMIT_FUEL_OPTIONS: Array<{ value: keyof PriceDataMap; label: string }> = [
-  { value: 'petrol', label: 'Petrol' },
+  { value: 'petrol', label: 'Regular' },
   { value: 'diesel', label: 'Diesel' },
   { value: 'premium', label: 'Premium' },
   { value: 'cng', label: 'CNG' },
-  { value: 'ev', label: 'EV' },
+  { value: 'ev', label: 'EV Charging' },
 ];
 
 export default function StationPage() {

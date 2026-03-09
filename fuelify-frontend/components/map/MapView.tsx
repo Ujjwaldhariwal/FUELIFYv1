@@ -278,7 +278,7 @@ export const MapView = ({
     const map = mapRef.current;
     if (!map || !superclusters) return;
 
-const renderMarkers = () => {
+    const renderMarkers = () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
       const colors = readMarkerColors();
@@ -355,6 +355,10 @@ const renderMarkers = () => {
     } else {
       map.once("styledata", renderMarkers);
     }
+
+    return () => {
+      map.off("styledata", renderMarkers);
+    };
   }, [
     superclusters,
     onStationSelect,

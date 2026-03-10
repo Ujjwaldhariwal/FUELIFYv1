@@ -106,12 +106,10 @@ export const MapView = ({
   // ─── Stable callback refs ─────────────────────────────────────────────────
   const onViewportChangeRef = useRef(onViewportChange);
   const onMapInteractionRef = useRef(onMapInteraction);
-  useEffect(() => {
-    onViewportChangeRef.current = onViewportChange;
-  }, [onViewportChange]);
-  useEffect(() => {
-    onMapInteractionRef.current = onMapInteraction;
-  }, [onMapInteraction]);
+  const onStationSelectRef = useRef(onStationSelect);
+  useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
+  useEffect(() => { onMapInteractionRef.current = onMapInteraction; }, [onMapInteraction]);
+  useEffect(() => { onStationSelectRef.current = onStationSelect; }, [onStationSelect]);
 
   const initialCenterRef = useRef(center);
   const initialZoomRef = useRef(initialZoom);
@@ -142,27 +140,32 @@ export const MapView = ({
   }, [stations, selectedFuel]);
 
   // ─── 2. Initialize Supercluster Hook ──────────────────────────────────────
-  const { clusters: superclusters, supercluster } = useSupercluster({
-    points,
-    bounds: bounds ? bounds : undefined,
-    zoom: zoomLevel,
-    options: {
-      radius: 65, // Adjust this to change how close markers need to be to cluster
-      maxZoom: 12, // Stop clustering when zoomed in past 12
-      // Calculate the minPrice for each cluster group
-      map: (props) => ({ minPrice: props.price }),
-      reduce: (accumulated, props) => {
+  // options MUST be stable — inline objects/functions cause infinite re-render
+  const superclusterOptions = useMemo(
+    () => ({
+      radius: 65,
+      maxZoom: 12,
+      map: (props: { price: number | null }) => ({ minPrice: props.price }),
+      reduce: (
+        accumulated: { minPrice: number | null | undefined },
+        props: { minPrice: number | null },
+      ) => {
         if (props.minPrice === null) return;
-        if (
-          accumulated.minPrice === null ||
-          accumulated.minPrice === undefined
-        ) {
+        if (accumulated.minPrice === null || accumulated.minPrice === undefined) {
           accumulated.minPrice = props.minPrice;
         } else {
           accumulated.minPrice = Math.min(accumulated.minPrice, props.minPrice);
         }
       },
-    },
+    }),
+    [],
+  );
+
+  const { clusters: superclusters, supercluster } = useSupercluster({
+    points,
+    bounds: bounds ?? undefined,
+    zoom: zoomLevel,
+    options: superclusterOptions,
   });
 
   // ─── Init map ONCE ────────────────────────────────────────────────────────
@@ -191,7 +194,13 @@ export const MapView = ({
 
     const updateMapState = () => {
       const b = map.getBounds();
-      setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+      const w = b.getWest(), s = b.getSouth(), e = b.getEast(), n = b.getNorth();
+      // Only update if values actually changed — avoids re-render with same bounds
+      setBounds((prev) =>
+        prev && prev[0] === w && prev[1] === s && prev[2] === e && prev[3] === n
+          ? prev
+          : [w, s, e, n],
+      );
       setZoomLevel(map.getZoom());
 
       if (!onViewportChangeRef.current) return;
@@ -336,7 +345,7 @@ export const MapView = ({
 
           element.addEventListener("click", (e) => {
             e.stopPropagation();
-            onStationSelect(station);
+            onStationSelectRef.current(station);
           });
 
           const marker = new maplibregl.Marker({
@@ -359,13 +368,7 @@ export const MapView = ({
     return () => {
       map.off("styledata", renderMarkers);
     };
-  }, [
-    superclusters,
-    onStationSelect,
-    selectedFuel,
-    selectedStationId,
-    supercluster,
-  ]);
+  }, [superclusters, selectedFuel, selectedStationId, supercluster]);
 
   return (
     <div

@@ -332,6 +332,15 @@ export default function HomePage() {
     return ranges;
   }, [stations]);
 
+  const handleStationSelect = useCallback((station: Station) => {
+    setSelectedStationId(station._id);
+    const [lng, lat] = station.coordinates.coordinates;
+    if (lat !== undefined && lng !== undefined) setCenter([lat, lng]);
+    setSheetOpen(true);
+  }, []);
+
+  const handleMapInteraction = useCallback(() => setNearMeMode(false), []);
+
   const flyToBest = () => {
     if (!bestStation) return;
     const [lng, lat] = bestStation.coordinates.coordinates;
@@ -439,17 +448,12 @@ export default function HomePage() {
           useServerClusters={lowZoomClusterMode}
           selectedFuel={selectedFuel}
           center={center}
-          onStationSelect={(station) => {
-            setSelectedStationId(station._id);
-            const [lng, lat] = station.coordinates.coordinates;
-            if (lat !== undefined && lng !== undefined) setCenter([lat, lng]);
-            setSheetOpen(true);
-          }}
+          onStationSelect={handleStationSelect}
           selectedStationId={selectedStationId}
           theme={theme}
           initialZoom={11.5}
           onViewportChange={setViewport}
-          onMapInteraction={() => setNearMeMode(false)}
+          onMapInteraction={handleMapInteraction}
         />
       </div>
 

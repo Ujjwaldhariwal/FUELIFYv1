@@ -46,5 +46,7 @@ const ClaimSchema = new mongoose.Schema(
 );
 
 ClaimSchema.index({ stationId: 1, createdAt: -1 });
+ClaimSchema.index({ ownerId: 1, createdAt: -1 });
+ClaimSchema.index({ status: 1, retryAt: 1 });
 
 module.exports = mongoose.model('Claim', ClaimSchema);

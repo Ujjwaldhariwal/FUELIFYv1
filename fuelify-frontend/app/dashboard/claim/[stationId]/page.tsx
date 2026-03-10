@@ -16,6 +16,7 @@ import {
   formatApiErrorForToast,
   getStationClaimSummary,
   initiateClaim,
+  parseApiError,
   resendOtp,
   submitClaimVerification,
   verifyClaim,
@@ -145,9 +146,16 @@ export default function ClaimFlowPage() {
         return;
       } catch (claimError) {
         show(`Account created. Claim review was not started: ${formatApiErrorForToast(claimError)}`, 'warning');
+        router.push(`/dashboard/claim/status/${stationId}`);
+        return;
       }
-      setStep(5);
     } catch (error) {
+      const apiError = parseApiError(error);
+      if (apiError.status === 401 || apiError.status === 410 || apiError.status === 429) {
+        setStep(3);
+        setOtp('');
+        setOtpError(apiError.message);
+      }
       show(formatApiErrorForToast(error), 'error');
     } finally {
       setSubmitting(false);

@@ -9,6 +9,24 @@ const { scheduleStationCacheInvalidation } = require('../services/stationCache')
 
 // All routes in this file require JWT auth
 router.use(requireAuth);
+router.use(async (req, res, next) => {
+  try {
+    const station = await Station.findById(req.owner.stationId).select('_id status').lean();
+    if (!station) return res.status(404).json({ error: 'Station not found' });
+    if (station.status !== 'VERIFIED') {
+      return res.status(403).json({
+        code: 'STATION_NOT_VERIFIED',
+        error: 'Dashboard access is enabled after verification approval',
+        stationId: station._id.toString(),
+        stationStatus: station.status,
+      });
+    }
+    req.dashboardStation = station;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+});
 
 // GET /api/dashboard/station
 router.get('/station', async (req, res, next) => {
@@ -26,13 +44,10 @@ router.patch('/station', async (req, res, next) => {
   try {
     const allowed = ['name', 'address', 'phone', 'website', 'hours', 'services', 'brand'];
     const updates = {};
-    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus status').lean();
+    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus').lean();
     if (!currentStation) return res.status(404).json({ error: 'Station not found' });
     if (currentStation.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station is blocked from profile updates' });
-    }
-    if (currentStation.status !== 'VERIFIED') {
-      return res.status(403).json({ error: 'Station profile can be updated after verification approval' });
     }
 
     allowed.forEach((field) => {
@@ -60,13 +75,10 @@ router.patch('/station', async (req, res, next) => {
 router.post('/prices', async (req, res, next) => {
   try {
     const { regular, midgrade, premium, diesel, e85 } = req.body;
-    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus status').lean();
+    const currentStation = await Station.findById(req.owner.stationId).select('riskStatus').lean();
     if (!currentStation) return res.status(404).json({ error: 'Station not found' });
     if (currentStation.riskStatus === 'blocked') {
       return res.status(403).json({ error: 'Station is blocked from price updates' });
-    }
-    if (currentStation.status !== 'VERIFIED') {
-      return res.status(403).json({ error: 'Price updates are enabled after verification approval' });
     }
     const submitted = { regular, midgrade, premium, diesel, e85 };
 

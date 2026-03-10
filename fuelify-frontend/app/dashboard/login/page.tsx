@@ -34,6 +34,13 @@ export default function LoginPage() {
       localStorage.setItem('fuelify_token', response.token);
       localStorage.setItem('fuelify_owner', JSON.stringify(response.owner));
       show('Signed in successfully.', 'success');
+      if (response.station?.status !== 'VERIFIED') {
+        const stationId = response.station?._id || response.owner?.stationId;
+        if (stationId) {
+          router.push(`/dashboard/claim/status/${stationId}`);
+          return;
+        }
+      }
       router.push('/dashboard');
     } catch (error) {
       show(formatApiErrorForToast(error), 'error');

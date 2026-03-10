@@ -22,4 +22,6 @@ const OwnerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+OwnerSchema.index({ stationId: 1, isVerified: 1 });
+
 module.exports = mongoose.model('Owner', OwnerSchema);

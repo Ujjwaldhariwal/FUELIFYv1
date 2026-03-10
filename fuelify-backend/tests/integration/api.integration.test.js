@@ -299,6 +299,8 @@ describe('Fuelify backend integration', () => {
     expect(res.status).toBe(200);
     expect(res.body.token).toBeTruthy();
     expect(res.body.owner.email).toBe('owner.login@fuelify.local');
+    expect(res.body.owner.stationId).toBe(station._id.toString());
+    expect(res.body.owner.isVerified).toBe(true);
     expect(res.body.station._id).toBe(station._id.toString());
   });
 
@@ -434,7 +436,9 @@ describe('Fuelify backend integration', () => {
       .send({ regular: 3.011 });
 
     expect(updateRes.status).toBe(403);
+    expect(updateRes.body.code).toBe('STATION_NOT_VERIFIED');
     expect(updateRes.body.error).toMatch(/enabled after verification approval/i);
+    expect(updateRes.body.stationStatus).toBe('CLAIMED');
   });
 
   test('POST /api/stations/:stationId/report rejects malformed stationId', async () => {

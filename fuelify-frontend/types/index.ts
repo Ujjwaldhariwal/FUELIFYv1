@@ -107,9 +107,11 @@ export interface PriceHistoryEntry {
 
 export interface Owner {
   id: string;
+  stationId?: string;
   name: string;
   email: string;
   role: 'OWNER' | 'STAFF' | 'ADMIN';
+  isVerified?: boolean;
 }
 
 export interface AuthState {

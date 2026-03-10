@@ -219,8 +219,11 @@ export const MapView = ({
     map.on("load", updateMapState);
 
     map.on("moveend", () => {
+      if (suppressNextMoveRef.current) {
+        suppressNextMoveRef.current = false;
+        return;
+      }
       updateMapState();
-      if (suppressNextMoveRef.current) suppressNextMoveRef.current = false;
     });
 
     map.on("dragstart", () => onMapInteractionRef.current?.());
@@ -299,10 +302,12 @@ export const MapView = ({
         if (feature.properties.cluster) {
           // Cast the ID to a number to satisfy TypeScript
           const clusterId = feature.id as number;
-          const pointCount = feature.properties.point_count;
-          
-          // Cast our custom injected property
-          const minPrice = (feature.properties as { minPrice: number | null }).minPrice;
+          const clusterProps = feature.properties as {
+            point_count?: number;
+            minPrice?: number | null;
+          };
+          const pointCount = clusterProps.point_count ?? 0;
+          const minPrice = clusterProps.minPrice ?? null;
 
           const element = createClusterMarkerElement(pointCount, minPrice ?? null, colors);
 
@@ -367,8 +372,10 @@ export const MapView = ({
 
     return () => {
       map.off("styledata", renderMarkers);
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
     };
-  }, [superclusters, selectedFuel, selectedStationId, supercluster]);
+  }, [superclusters, selectedFuel, selectedStationId, supercluster, theme]);
 
   return (
     <div

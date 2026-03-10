@@ -177,7 +177,14 @@ router.post('/claim/verify', otpVerifyLimiter, async (req, res, next) => {
     const token = signToken(owner._id);
     return res.json({
       token,
-      owner: { id: owner._id, name, email: owner.email, role: owner.role },
+      owner: {
+        id: owner._id,
+        stationId: owner.stationId,
+        name,
+        email: owner.email,
+        role: owner.role,
+        isVerified: owner.isVerified,
+      },
       station,
     });
   } catch (err) {
@@ -224,7 +231,14 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 
     return res.json({
       token,
-      owner: { id: owner._id, name: owner.name, email: owner.email, role: owner.role },
+      owner: {
+        id: owner._id,
+        stationId: owner.stationId,
+        name: owner.name,
+        email: owner.email,
+        role: owner.role,
+        isVerified: owner.isVerified,
+      },
       station,
     });
   } catch (err) {

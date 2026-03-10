@@ -114,6 +114,7 @@ const StationSchema = new mongoose.Schema(
 // Indexes
 StationSchema.index({ coordinates: '2dsphere' });
 StationSchema.index({ 'address.state': 1, status: 1 });
+StationSchema.index({ status: 1, riskStatus: 1, 'prices.lastUpdated': -1 });
 StationSchema.index({ brand: 1 });
 StationSchema.index({ slug: 1 },    { unique: true });
 StationSchema.index(

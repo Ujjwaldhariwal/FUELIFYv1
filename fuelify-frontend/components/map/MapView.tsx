@@ -175,7 +175,7 @@ export const MapView = ({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: TILE_STYLES[theme || "dark"],
+      style: TILE_STYLES[appliedThemeRef.current],
       center: [initialCenterRef.current[1], initialCenterRef.current[0]],
       zoom: initialZoomRef.current,
       attributionControl: false,

@@ -275,7 +275,7 @@ export default function ClaimFlowPage() {
             <div>
               <h1 className="mb-1 text-lg font-bold">Enter your phone number</h1>
               <p className="mb-5 text-sm text-[var(--text-secondary)]">
-                We'll send a 6-digit verification code to confirm you own this station.
+                We&apos;ll send a 6-digit verification code to confirm you own this station.
               </p>
 
               <Input
@@ -331,7 +331,7 @@ export default function ClaimFlowPage() {
           {step === 4 && (
             <form onSubmit={handleSubmit(finalizeAccount)}>
               <h1 className="mb-1 text-lg font-bold">Create your account</h1>
-              <p className="mb-5 text-sm text-[var(--text-secondary)]">You're almost done!</p>
+              <p className="mb-5 text-sm text-[var(--text-secondary)]">You&apos;re almost done!</p>
 
               <div className="space-y-4">
                 <Input

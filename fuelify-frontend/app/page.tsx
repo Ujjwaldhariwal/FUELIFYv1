@@ -2,30 +2,21 @@
 
 "use client";
 
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { ArrowDown, Fuel, Locate, Search, Sun, Moon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { FuelType, Station, StationCluster } from "@/types";
+import type { FuelType, Station } from "@/types";
 import {
   fetchNearbyStations,
-  fetchStationClustersByViewport,
   fetchStationsByViewport,
 } from "@/services/api";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { StationListCard } from "@/components/ui/StationListCard";
 import { FuelChips } from "@/components/ui/FuelChips";
 import { ModeChip } from "@/components/ui/ModeChip";
+import FuelMap, { type FuelMapViewportInfo } from "@/components/FuelMap";
 import { useTheme } from "@/components/theme/ThemeContext";
-import type { MapViewportInfo } from "@/components/map/MapView";
-
-const MapView = dynamic(
-  () => import("@/components/map/MapView").then((m) => m.MapView),
-  {
-    ssr: false,
-    loading: () => <div className="h-full w-full skeleton-shimmer" />,
-  },
-);
 
 const DEFAULT_CENTER: [number, number] = [40.4173, -82.9071];
 const DEFAULT_VIEWPORT_LIMIT = 150;
@@ -65,7 +56,6 @@ export default function HomePage() {
   const { theme, toggleTheme } = useTheme();
 
   const [stations, setStations] = useState<Station[]>([]);
-  const [clusters, setClusters] = useState<StationCluster[]>([]);
   const [totalInView, setTotalInView] = useState(0); // ← true API total, not capped array length
   const [selectedFuel, setSelectedFuel] = useState<FuelType>("regular");
   const [center, setCenter] = useState<[number, number]>(
@@ -78,7 +68,7 @@ export default function HomePage() {
   const [sheetOpen, setSheetOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [viewport, setViewport] = useState<MapViewportInfo | null>(null);
+  const [viewport, setViewport] = useState<FuelMapViewportInfo | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
     DEV_LOCATION,
   );
@@ -90,9 +80,6 @@ export default function HomePage() {
   const locationFetchedRef = useRef(false);
   const inFlightControllerRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const lowZoomClusterMode =
-    !nearMeMode && Boolean(viewport && viewport.zoom <= 9);
 
   const locateUser = useCallback(() => {
     if (DEV_LOCATION) {
@@ -123,7 +110,7 @@ export default function HomePage() {
     if (locationFetchedRef.current) return;
     locationFetchedRef.current = true;
     locateUser();
-  }, []);
+  }, [locateUser]);
 
   const fetchListPage = useCallback(
     async (page: number, append: boolean, signal?: AbortSignal) => {
@@ -143,7 +130,6 @@ export default function HomePage() {
         setListPage(1);
         setTotalInView(fallback.total || 0);
         setStations(fallback.stations);
-        setClusters([]);
       };
 
       if (nearMeMode && userLocation) {
@@ -169,24 +155,10 @@ export default function HomePage() {
             ? dedupeStations([...prev, ...response.stations])
             : response.stations,
         );
-        setClusters([]);
         return;
       }
 
       if (viewport) {
-        if (lowZoomClusterMode && page === 1) {
-          const clusterResponse = await fetchStationClustersByViewport(
-            viewport.bounds,
-            selectedFuel,
-            viewport.zoom,
-            500,
-            signal,
-          );
-          setClusters(clusterResponse.clusters);
-        } else if (!lowZoomClusterMode) {
-          setClusters([]);
-        }
-
         const response = await fetchStationsByViewport(
           viewport.bounds,
           selectedFuel,
@@ -230,16 +202,8 @@ export default function HomePage() {
           ? dedupeStations([...prev, ...fallback.stations])
           : fallback.stations,
       );
-      setClusters([]);
     },
-    [
-      center,
-      lowZoomClusterMode,
-      nearMeMode,
-      selectedFuel,
-      userLocation,
-      viewport,
-    ],
+    [center, nearMeMode, selectedFuel, userLocation, viewport],
   );
 
   useEffect(() => {
@@ -253,8 +217,13 @@ export default function HomePage() {
       setLoading(true);
       try {
         await fetchListPage(1, false, controller.signal);
-      } catch (error: any) {
-        if (error?.code !== "ERR_CANCELED") console.error(error);
+      } catch (error) {
+        const isCanceled =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          (error as { code?: string }).code === "ERR_CANCELED";
+        if (!isCanceled) console.error(error);
       } finally {
         setLoading(false);
       }
@@ -336,7 +305,7 @@ export default function HomePage() {
     setSelectedStationId(station._id);
     const [lng, lat] = station.coordinates.coordinates;
     if (lat !== undefined && lng !== undefined) setCenter([lat, lng]);
-    setSheetOpen(true);
+    setSheetOpen(false);
   }, []);
 
   const handleMapInteraction = useCallback(() => setNearMeMode(false), []);
@@ -348,6 +317,18 @@ export default function HomePage() {
     setCenter([lat, lng]);
     setSelectedStationId(bestStation._id);
   };
+
+  const selectedStation = useMemo(
+    () => stations.find((station) => station._id === selectedStationId),
+    [selectedStationId, stations],
+  );
+  const layoutCssVars = useMemo(
+    () =>
+      ({
+        ["--fuelify-header-height" as string]: "116px",
+      }) as CSSProperties,
+    [],
+  );
 
   const listStations = useMemo(
     () => stations.slice(0, visibleCount),
@@ -375,6 +356,7 @@ export default function HomePage() {
                 const [lng, lat] = station.coordinates.coordinates;
                 if (lat !== undefined && lng !== undefined)
                   setCenter([lat, lng]);
+                setSheetOpen(false);
               }}
             />
           ))}
@@ -413,8 +395,11 @@ export default function HomePage() {
   );
 
   return (
-    <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--bg-primary)]">
-      <aside className="hidden lg:absolute lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-[380px] lg:flex-col lg:border-r lg:border-[var(--border)] lg:bg-[var(--bg-surface)]">
+    <main
+      className="relative h-[100dvh] w-full overflow-hidden bg-[var(--bg-primary)]"
+      style={layoutCssVars}
+    >
+      <aside className="hidden lg:absolute lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-[35%] lg:flex-col lg:border-r lg:border-[var(--border)] lg:bg-[var(--bg-surface)]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-gradient shadow-[var(--shadow-accent)]">
@@ -441,23 +426,22 @@ export default function HomePage() {
         <div className="flex-1 overflow-y-auto">{renderStationList()}</div>
       </aside>
 
-      <div className="absolute inset-0 lg:left-[380px]">
-        <MapView
+      <div className="absolute inset-0 lg:left-[35%]">
+        <FuelMap
           stations={stations}
-          clusters={clusters}
-          useServerClusters={lowZoomClusterMode}
-          selectedFuel={selectedFuel}
-          center={center}
+          selectedStation={selectedStation}
           onStationSelect={handleStationSelect}
-          selectedStationId={selectedStationId}
-          theme={theme}
-          initialZoom={11.5}
+          userLocation={userLocation ?? undefined}
+          mapStyle={theme === "dark" ? "dark" : "liberty"}
+          selectedFuel={selectedFuel}
+          targetCenter={center}
           onViewportChange={setViewport}
           onMapInteraction={handleMapInteraction}
+          className="h-full"
         />
       </div>
 
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-[520] px-3 pt-safe sm:px-4 lg:left-[380px]">
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-[520] px-3 pt-safe sm:px-4 lg:left-[35%]">
         <header className="pointer-events-auto mt-3">
           <div className="flex h-14 items-center gap-2 rounded-2xl border border-[var(--border-strong)] p-2 glass shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
             <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-brand-gradient px-3 shadow-[var(--shadow-accent)]">
@@ -567,7 +551,7 @@ export default function HomePage() {
           isOpen={sheetOpen}
           onClose={() => setSheetOpen(false)}
           title={`Stations ${nearMeMode ? "within 10km" : "in view"} (${displayTotal.toLocaleString()})`}
-          snapPoints={[130, "50vh", "90vh"]}
+          snapPoints={["30vh", "85vh"]}
         >
           {renderStationList()}
         </BottomSheet>
@@ -578,14 +562,14 @@ export default function HomePage() {
             onClick={() => setSheetOpen(true)}
             className={[
               "fixed bottom-6 left-1/2 z-[700] -translate-x-1/2 mb-safe",
-              "flex h-12 items-center gap-2 rounded-full px-6",
-              "bg-brand-gradient text-white text-sm font-bold",
+              "flex h-11 items-center gap-2 rounded-full px-5",
+              "bg-brand-gradient text-white text-xs font-bold sm:text-sm",
               "shadow-[var(--shadow-accent)]",
-              "transition-all duration-200 hover:shadow-[0_6px_24px_rgba(255,99,71,0.45)] active:scale-95",
+              "transition-all duration-200 hover:brightness-110 active:scale-95",
             ].join(" ")}
           >
             <Fuel className="h-4 w-4" />
-            See {displayTotal.toLocaleString()} Stations
+            Browse {displayTotal.toLocaleString()} Stations
           </button>
         )}
       </div>

@@ -11,6 +11,12 @@
     "e2e:serve": "next build && next start --hostname 127.0.0.1 --port 3100"
   },
   "dependencies": {
+    "@deck.gl/aggregation-layers": "^9.2.11",
+    "@deck.gl/core": "^9.2.11",
+    "@deck.gl/extensions": "^9.2.11",
+    "@deck.gl/layers": "^9.2.11",
+    "@deck.gl/react": "^9.2.11",
+    "@deck.gl/widgets": "^9.2.11",
     "axios": "^1.6.0",
     "lucide-react": "^0.363.0",
     "maplibre-gl": "^5.19.0",
@@ -18,6 +24,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.50.0",
+    "react-map-gl": "^8.1.0",
     "supercluster": "^8.0.1",
     "use-supercluster": "^1.2.0"
   },

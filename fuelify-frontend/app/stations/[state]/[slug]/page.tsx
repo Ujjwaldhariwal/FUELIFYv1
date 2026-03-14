@@ -165,8 +165,8 @@ export default function StationPage() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
-      <div className="mx-auto max-w-2xl px-4 py-6">
-        <nav className="mb-6 flex items-center gap-1 text-xs text-[var(--text-muted)]">
+      <div className="mx-auto w-full max-w-3xl px-3 pb-8 pt-4 sm:px-4 sm:pt-6">
+        <nav className="mb-4 flex flex-wrap items-center gap-1 text-[11px] text-[var(--text-muted)] sm:mb-6 sm:text-xs">
           <Link href="/" className="transition-colors hover:text-[var(--accent-primary)]">
             Home
           </Link>
@@ -175,40 +175,46 @@ export default function StationPage() {
             Ohio
           </Link>
           <ChevronRight className="h-3 w-3" />
-          <span className="truncate text-[var(--text-secondary)]">{station.name}</span>
+          <span className="max-w-[55vw] truncate text-[var(--text-secondary)] sm:max-w-none">{station.name}</span>
         </nav>
 
-        <div className="mb-6 flex items-start gap-4">
-          <div className="shrink-0 overflow-hidden rounded-2xl shadow-[var(--shadow-md)]">
-            <BrandLogo brand={station.brand} size={72} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-black leading-tight tracking-tight text-[var(--text-primary)]">{station.name}</h1>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-              {station.address.street}, {station.address.city}, {station.address.state} {station.address.zip}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <StatusBadge status={station.status} size="md" />
+        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-sm)] sm:mb-6 sm:p-4">
+          <div className="flex items-start gap-3 sm:gap-4">
+            <div className="shrink-0 overflow-hidden rounded-2xl border border-[var(--border)]">
+              <BrandLogo brand={station.brand} size={64} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-black leading-tight tracking-tight text-[var(--text-primary)] sm:text-2xl">
+                {station.name}
+              </h1>
+              <p className="mt-1 flex items-start gap-1.5 text-xs text-[var(--text-secondary)] sm:text-sm">
+                <MapPin className="mt-[2px] h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+                <span className="break-words">
+                  {station.address.street}, {station.address.city}, {station.address.state} {station.address.zip}
+                </span>
+              </p>
+              <div className="mt-2">
+                <StatusBadge status={station.status} size="md" />
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)]">
-          <div className="mb-3 flex items-center justify-between">
+        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-sm)] sm:p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-info-muted)]">
                 <Fuel className="h-3.5 w-3.5 text-[var(--color-info)]" />
               </span>
-              <h2 className="font-bold text-[var(--text-primary)]">Current Prices</h2>
+              <h2 className="text-sm font-bold text-[var(--text-primary)] sm:text-base">Current Prices</h2>
             </div>
             {station.prices?.lastUpdated ? (
-              <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+              <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] sm:text-xs">
                 <Clock className="h-3 w-3" />
                 {new Date(station.prices.lastUpdated).toLocaleDateString()}
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-xs text-[var(--color-warning)]">
+              <span className="flex items-center gap-1 text-[11px] text-[var(--color-warning)] sm:text-xs">
                 <AlertTriangle className="h-3 w-3" />
                 Not reported yet
               </span>
@@ -216,11 +222,11 @@ export default function StationPage() {
           </div>
 
           {priceLoading ? (
-            <div className="flex min-h-[132px] items-center justify-center">
+            <div className="flex min-h-[120px] items-center justify-center">
               <Spinner size="md" />
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
               {cards.map((card) => (
                 <PriceCard
                   key={card.id}
@@ -233,24 +239,26 @@ export default function StationPage() {
           )}
         </section>
 
-        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)]">
+        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-sm)] sm:p-4">
           <div className="mb-3 flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
               <Fuel className="h-3.5 w-3.5 text-[var(--text-muted)]" />
             </span>
-            <h2 className="font-bold text-[var(--text-primary)]">Report a Price</h2>
+            <h2 className="text-sm font-bold text-[var(--text-primary)] sm:text-base">Report A Price</h2>
           </div>
-          <p className="mb-4 text-xs text-[var(--text-secondary)]">
-            Help drivers by submitting the latest pump price for this station.
+          <p className="mb-3 text-[11px] text-[var(--text-secondary)] sm:mb-4 sm:text-xs">
+            Help nearby drivers with the latest pump data.
           </p>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Fuel Type</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+                Fuel Type
+              </span>
               <select
                 value={submitFuelType}
                 onChange={(event) => setSubmitFuelType(event.target.value as keyof PriceDataMap)}
-                className="min-h-[52px] rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+                className="min-h-[48px] rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 {SUBMIT_FUEL_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -284,18 +292,18 @@ export default function StationPage() {
           </div>
         </section>
 
-        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)]">
-          <h2 className="mb-3 font-bold text-[var(--text-primary)]">Station Info</h2>
-          <div className="space-y-2.5">
+        <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-sm)] sm:p-4">
+          <h2 className="mb-3 text-sm font-bold text-[var(--text-primary)] sm:text-base">Station Info</h2>
+          <div className="space-y-2.5 text-sm">
             {station.phone && (
               <a
                 href={`tel:${station.phone}`}
-                className="flex items-center gap-2.5 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--accent-primary)]"
+                className="flex items-center gap-2.5 text-[var(--text-secondary)] transition-colors hover:text-[var(--accent-primary)]"
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
                   <Phone className="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 </span>
-                {station.phone}
+                <span className="break-all">{station.phone}</span>
               </a>
             )}
             {station.website && (
@@ -303,30 +311,30 @@ export default function StationPage() {
                 href={station.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2.5 text-sm text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-violet)]"
+                className="flex items-center gap-2.5 text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-violet)]"
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
                   <Globe className="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 </span>
-                {station.website.replace(/^https?:\/\//, '')}
+                <span className="break-all">{station.website.replace(/^https?:\/\//, '')}</span>
               </a>
             )}
             {station.hours && (
-              <div className="flex items-start gap-2.5 text-sm text-[var(--text-secondary)]">
+              <div className="flex items-start gap-2.5 text-[var(--text-secondary)]">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
                   <Clock className="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 </span>
-                {station.hours}
+                <span>{station.hours}</span>
               </div>
             )}
           </div>
         </section>
 
         {priceHistory?.length > 0 && (
-          <section className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-sm)]">
-            <h2 className="mb-3 font-bold text-[var(--text-primary)]">Price History</h2>
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-sm)] sm:p-4">
+            <h2 className="mb-3 text-sm font-bold text-[var(--text-primary)] sm:text-base">Price History</h2>
             <div className="-mx-1 overflow-x-auto px-1">
-              <table className="w-full text-left text-xs">
+              <table className="min-w-[520px] w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-[var(--border)]">
                     <th className="pb-2 pr-4 font-semibold text-[var(--text-muted)]">Date</th>
@@ -339,7 +347,9 @@ export default function StationPage() {
                 <tbody>
                   {priceHistory.map((entry) => (
                     <tr key={entry._id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-2 pr-4 text-[var(--text-muted)]">{new Date(entry.reportedAt).toLocaleDateString()}</td>
+                      <td className="py-2 pr-4 text-[var(--text-muted)]">
+                        {new Date(entry.reportedAt).toLocaleDateString()}
+                      </td>
                       <td className="py-2 pr-3 font-semibold tabular-nums text-[var(--text-primary)]">
                         {entry.prices.regular ? `$${entry.prices.regular.toFixed(2)}` : '-'}
                       </td>

@@ -178,6 +178,7 @@ describe('Fuelify backend integration', () => {
     expect(res.body.status).toBe('ok');
     expect(res.body.timestamp).toBeDefined();
     expect(res.headers['x-request-id']).toBeTruthy();
+    expect(res.headers['x-response-time-ms']).toBeTruthy();
   });
 
   test('GET /api/stations returns stations sorted by selected fuel price', async () => {
@@ -206,6 +207,8 @@ describe('Fuelify backend integration', () => {
     expect(res.body.stations).toHaveLength(2);
     expect(res.body.stations[0]._id).toBe(cheaper._id.toString());
     expect(res.body.stations[1]._id).toBe(expensive._id.toString());
+    expect(res.headers['x-station-cache']).toBeTruthy();
+    expect(res.headers['x-station-query-mode']).toBe('near');
   });
 
   test('GET /api/stations supports bbox viewport mode', async () => {
@@ -763,6 +766,7 @@ describe('Fuelify backend integration', () => {
     });
 
     const res = await request(app).get(`/api/prices/${station._id.toString()}/latest`);
+    const cachedRes = await request(app).get(`/api/prices/${station._id.toString()}/latest`);
 
     expect(res.status).toBe(200);
     expect(res.body.stationId).toBe(station._id.toString());
@@ -774,6 +778,9 @@ describe('Fuelify backend integration', () => {
     expect(res.body.prices.premium).toBeNull();
     expect(res.body.prices.cng).toBeNull();
     expect(res.body.prices.ev).toBeNull();
+    expect(res.headers['x-price-cache']).toBe('miss');
+    expect(cachedRes.status).toBe(200);
+    expect(cachedRes.headers['x-price-cache']).toBe('hit');
   });
 
   test('POST /api/auth/login supports phone identifier login', async () => {

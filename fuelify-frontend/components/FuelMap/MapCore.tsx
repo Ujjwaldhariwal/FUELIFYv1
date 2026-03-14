@@ -1,22 +1,36 @@
 "use client";
 
-import { type Layer, type PickingInfo, type ViewStateChangeParameters } from "@deck.gl/core";
-import DeckGL from "@deck.gl/react";
+import { type Layer, type PickingInfo } from "@deck.gl/core";
+import { MapboxOverlay } from "@deck.gl/mapbox";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentProps, ComponentType } from "react";
-import Map, { type MapRef } from "react-map-gl/maplibre";
-import { createClusterCircleLayer, createClusterCountLayer, createRecentUpdatePulseLayer, createSelectedStationHaloLayer, createStationLayer, createUserLocationLayers, buildClusterIndex, filterStationsByBounds, getClusters, getPriceRange, getStationPrice, toStationPoints } from "./layers";
+import Map, { type MapRef, useControl, type ViewStateChangeEvent } from "react-map-gl/maplibre";
+import {
+  createClusterCircleLayer,
+  createClusterCountLayer,
+  createClusterHaloLayer,
+  createNearbyStationLabelLayer,
+  createNearbyStationRingLayer,
+  createRecentUpdatePulseLayer,
+  createSelectedStationHaloLayer,
+  createStationAuraLayer,
+  createStationLayer,
+  createUserLocationLayers,
+  buildClusterIndex,
+  distanceKmBetween,
+  filterStationsByBounds,
+  filterStationsByUserRadius,
+  getClusters,
+  getPriceRange,
+  getStationPrice,
+  toStationPoints,
+} from "./layers";
 import MapControls from "./MapControls";
 import StationBottomSheet from "./StationBottomSheet";
 import type { ClusterPoint, FuelMapProps, FuelMapStyle, FuelMapTooltipState, FuelMapViewState, LatLng, StationPoint } from "./types";
 import { DEFAULT_VIEW_STATE, MAP_STYLE_URLS } from "./types";
 import { getViewportBounds, useMapViewport } from "./useMapViewport";
-
-const DeckGLInterleaved = DeckGL as unknown as ComponentType<
-  ComponentProps<typeof DeckGL> & { interleaved?: boolean }
->;
 
 const ACTIVE_UPDATE_WINDOW_MS = 2 * 60 * 60 * 1000;
 const FLY_TO_DURATION = 800;
@@ -27,6 +41,13 @@ const easeCubicInOut = (value: number) =>
 
 const styleFromProp = (variant: FuelMapStyle | undefined) => MAP_STYLE_URLS[variant ?? "liberty"];
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const NEARBY_RADIUS_ZOOM_BREAKPOINT = 13;
+
+const DeckOverlay = ({ layers }: { layers: Layer[] }) => {
+  const overlay = useControl<MapboxOverlay>(() => new MapboxOverlay({ interleaved: true, layers }));
+  overlay.setProps({ interleaved: true, layers });
+  return null;
+};
 
 export const MapCore = ({
   stations,
@@ -113,6 +134,7 @@ export const MapCore = ({
   }, [visibleStations]);
 
   const zoom = viewState.zoom;
+  const nearbyRadiusKm = zoom >= NEARBY_RADIUS_ZOOM_BREAKPOINT ? 5 : 10;
   const markerBlend = clamp01((zoom - 10.7) / 0.7);
   const stationOpacity = markerBlend;
   const clusterOpacity = 1 - markerBlend;
@@ -155,6 +177,11 @@ export const MapCore = ({
   const { min: minPrice, max: maxPrice } = useMemo(
     () => getPriceRange(visibleStations),
     [visibleStations],
+  );
+
+  const nearbyVisibleStations = useMemo(
+    () => filterStationsByUserRadius(visibleStations, resolvedUserLocation, nearbyRadiusKm),
+    [nearbyRadiusKm, resolvedUserLocation, visibleStations],
   );
 
   const requestUserGeolocation = useCallback(
@@ -243,18 +270,33 @@ export const MapCore = ({
     [clusterIndex, isMobile, onMapInteraction, reducedMotion],
   );
 
-  const handleStationHover = useCallback((info: PickingInfo<StationPoint>) => {
-    if (!info.object || info.x === undefined || info.y === undefined) {
-      setTooltip(null);
-      return;
-    }
-    setTooltip({
-      x: info.x,
-      y: info.y,
-      station: info.object.station,
-      price: info.object.price,
-    });
-  }, []);
+  const handleStationHover = useCallback(
+    (info: PickingInfo<StationPoint>) => {
+      if (!info.object || info.x === undefined || info.y === undefined) {
+        setTooltip(null);
+        return;
+      }
+
+      if (resolvedUserLocation) {
+        const distanceKm = distanceKmBetween(resolvedUserLocation, [
+          info.object.latitude,
+          info.object.longitude,
+        ]);
+        if (distanceKm > nearbyRadiusKm) {
+          setTooltip(null);
+          return;
+        }
+      }
+
+      setTooltip({
+        x: info.x,
+        y: info.y,
+        station: info.object.station,
+        price: info.object.price,
+      });
+    },
+    [nearbyRadiusKm, resolvedUserLocation],
+  );
 
   const handleStationClick = useCallback(
     (station: StationPoint["station"]) => {
@@ -269,6 +311,13 @@ export const MapCore = ({
     const mapLayers: Layer[] = [];
 
     if (clustersShouldRender && clusterPoints.length > 0) {
+      mapLayers.push(
+        createClusterHaloLayer({
+          data: clusterPoints,
+          visible: true,
+          opacity: clusterOpacity,
+        }),
+      );
       mapLayers.push(
         createClusterCircleLayer({
           data: clusterPoints,
@@ -288,6 +337,16 @@ export const MapCore = ({
 
     if (stationsShouldRender) {
       mapLayers.push(
+        createStationAuraLayer({
+          data: visibleStations,
+          minPrice,
+          maxPrice,
+          isMobile,
+          visible: true,
+          opacity: stationOpacity,
+        }),
+      );
+      mapLayers.push(
         createStationLayer({
           data: visibleStations,
           minPrice,
@@ -300,6 +359,22 @@ export const MapCore = ({
           onStationHover: handleStationHover,
         }),
       );
+      if (nearbyVisibleStations.length > 0) {
+        mapLayers.push(
+          createNearbyStationRingLayer({
+            data: nearbyVisibleStations,
+            visible: true,
+            reducedMotion,
+            animationClock,
+          }),
+        );
+        mapLayers.push(
+          createNearbyStationLabelLayer({
+            data: nearbyVisibleStations,
+            visible: zoom >= 12,
+          }),
+        );
+      }
       mapLayers.push(
         createRecentUpdatePulseLayer({
           data: recentVisibleStations,
@@ -326,6 +401,7 @@ export const MapCore = ({
     isMobile,
     maxPrice,
     minPrice,
+    nearbyVisibleStations,
     recentVisibleStations,
     reducedMotion,
     resolvedUserLocation,
@@ -333,6 +409,7 @@ export const MapCore = ({
     stationOpacity,
     stationsShouldRender,
     visibleStations,
+    zoom,
   ]);
 
   const handleMapLoad = useCallback(() => {
@@ -357,8 +434,8 @@ export const MapCore = ({
   }, []);
 
   const handleViewStateChange = useCallback(
-    (params: ViewStateChangeParameters) => {
-      const next = params.viewState as FuelMapViewState;
+    (event: ViewStateChangeEvent) => {
+      const next = event.viewState as FuelMapViewState;
       const normalized: FuelMapViewState = {
         longitude: next.longitude,
         latitude: next.latitude,
@@ -464,40 +541,29 @@ export const MapCore = ({
       ].join(" ")}
       style={{ touchAction: "none", userSelect: "none" }}
     >
-      <DeckGLInterleaved
-        layers={layers}
-        viewState={viewState}
-        controller={{
-          dragPan: true,
-          dragRotate: true,
-          scrollZoom: true,
-          touchZoom: true,
-          touchRotate: true,
-          doubleClickZoom: true,
-          keyboard: false,
-        }}
-        onViewStateChange={handleViewStateChange}
-        getCursor={({ isDragging }) => (isDragging ? "grabbing" : "grab")}
-        interleaved
+      <Map
+        ref={mapRef}
+        mapLib={maplibregl}
+        mapStyle={mapStyleUrl}
+        style={{ width: "100%", height: "100%", backgroundColor: "#1a1a2e" }}
+        attributionControl={false}
+        dragPan
+        dragRotate
+        scrollZoom
+        touchZoomRotate
+        pitchWithRotate
+        doubleClickZoom
+        keyboard={false}
+        reuseMaps
+        onLoad={handleMapLoad}
+        onIdle={handleMapIdle}
+        onMoveStart={handleMoveStart}
+        onMove={handleViewStateChange}
+        onError={handleMapError}
+        {...viewState}
       >
-        <Map
-          ref={mapRef}
-          mapLib={maplibregl}
-          mapStyle={mapStyleUrl}
-          style={{ width: "100%", height: "100%", backgroundColor: "#1a1a2e" }}
-          attributionControl={false}
-          dragPan
-          dragRotate
-          scrollZoom
-          touchZoomRotate
-          pitchWithRotate
-          reuseMaps
-          onLoad={handleMapLoad}
-          onIdle={handleMapIdle}
-          onMoveStart={handleMoveStart}
-          onError={handleMapError}
-        />
-      </DeckGLInterleaved>
+        <DeckOverlay layers={layers} />
+      </Map>
 
       <div className="pointer-events-none absolute right-3 top-3 z-[620]">
         <MapControls

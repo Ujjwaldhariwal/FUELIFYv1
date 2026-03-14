@@ -9,8 +9,7 @@ const PriceReport = require('../models/PriceReport');
 const { reportLimiter } = require('../middleware/rateLimit');
 const { validateObjectIdParam } = require('../middleware/validateObjectId');
 const {
-  getCachedStations,
-  setCachedStations,
+  getOrSetCachedStations,
   scheduleStationCacheInvalidation,
 } = require('../services/stationCache');
 const { scoreStationRisk } = require('../services/stationRiskScorer');
@@ -186,112 +185,111 @@ router.get('/', async (req, res, next) => {
       bboxNorth: bbox?.north ?? null,
       zoom,
     };
-    const cached = await getCachedStations(cacheParams);
-    if (cached) return res.json(cached);
+    const { data: payload, cacheStatus } = await getOrSetCachedStations(cacheParams, async () => {
+      let stations = [];
+      let total = 0;
 
-    let stations = [];
-    let total = 0;
-
-    if (hasBbox) {
-      const filter = {
-        coordinates: {
-          $geoWithin: {
-            $box: [
-              [bbox.west, bbox.south],
-              [bbox.east, bbox.north],
-            ],
+      if (hasBbox) {
+        const filter = {
+          coordinates: {
+            $geoWithin: {
+              $box: [
+                [bbox.west, bbox.south],
+                [bbox.east, bbox.north],
+              ],
+            },
           },
-        },
-        ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER),
+          ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER),
+        };
+        total = await Station.countDocuments(filter);
+
+        const pipeline = [{ $match: filter }];
+        if (fuel) {
+          pipeline.push({
+            $addFields: {
+              __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
+            },
+          });
+          pipeline.push({ $sort: { __fuelSort: 1, name: 1 } });
+        } else {
+          pipeline.push({ $sort: { name: 1 } });
+        }
+        pipeline.push({ $skip: skip });
+        pipeline.push({ $limit: limit });
+        pipeline.push({ $project: projection });
+        stations = await Station.aggregate(pipeline);
+      } else if (hasLocation) {
+        const geoNear = {
+          $geoNear: {
+            near: { type: 'Point', coordinates: [lng, lat] },
+            distanceField: 'distanceMeters',
+            maxDistance: radiusKm * 1000,
+            spherical: true,
+            ...(includeIncomplete ? {} : { query: COMPLETE_ADDRESS_FILTER }),
+          },
+        };
+        const pipeline = [geoNear];
+
+        if (fuel) {
+          pipeline.push({
+            $addFields: {
+              __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
+            },
+          });
+          pipeline.push({ $sort: { __fuelSort: 1, distanceMeters: 1 } });
+        } else {
+          pipeline.push({ $sort: { distanceMeters: 1 } });
+        }
+
+        pipeline.push({ $skip: skip });
+        pipeline.push({ $limit: limit });
+        pipeline.push({ $project: projection });
+
+        stations = await Station.aggregate(pipeline);
+        const totalResult = await Station.aggregate([geoNear, { $count: 'total' }]);
+        total = totalResult[0]?.total || 0;
+      } else {
+        const state = typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH';
+        const filter = { 'address.state': state, ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER) };
+        total = await Station.countDocuments(filter);
+
+        const pipeline = [{ $match: filter }];
+
+        if (fuel) {
+          pipeline.push({
+            $addFields: {
+              __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
+            },
+          });
+          pipeline.push({ $sort: { __fuelSort: 1, name: 1 } });
+        } else {
+          pipeline.push({ $sort: { name: 1 } });
+        }
+
+        pipeline.push({ $skip: skip });
+        pipeline.push({ $limit: limit });
+        pipeline.push({ $project: projection });
+
+        stations = await Station.aggregate(pipeline);
+      }
+
+      const topIds = stations.map((station) => station._id);
+      if (topIds.length > 0) {
+        Station.updateMany({ _id: { $in: topIds } }, { $inc: { searchAppearances: 1 } }).exec();
+      }
+
+      return {
+        stations: stations.map(mapStationPayload),
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit) || 1,
+        queryMode,
       };
-      total = await Station.countDocuments(filter);
+    });
 
-      const pipeline = [{ $match: filter }];
-      if (fuel) {
-        pipeline.push({
-          $addFields: {
-            __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
-          },
-        });
-        pipeline.push({ $sort: { __fuelSort: 1, name: 1 } });
-      } else {
-        pipeline.push({ $sort: { name: 1 } });
-      }
-      pipeline.push({ $skip: skip });
-      pipeline.push({ $limit: limit });
-      pipeline.push({ $project: projection });
-      stations = await Station.aggregate(pipeline);
-    } else if (hasLocation) {
-      const geoNear = {
-        $geoNear: {
-          near: { type: 'Point', coordinates: [lng, lat] },
-          distanceField: 'distanceMeters',
-          maxDistance: radiusKm * 1000,
-          spherical: true,
-          ...(includeIncomplete ? {} : { query: COMPLETE_ADDRESS_FILTER }),
-        },
-      };
-      const pipeline = [
-        geoNear,
-      ];
-
-      if (fuel) {
-        pipeline.push({
-          $addFields: {
-            __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
-          },
-        });
-        pipeline.push({ $sort: { __fuelSort: 1, distanceMeters: 1 } });
-      } else {
-        pipeline.push({ $sort: { distanceMeters: 1 } });
-      }
-
-      pipeline.push({ $skip: skip });
-      pipeline.push({ $limit: limit });
-      pipeline.push({ $project: projection });
-
-      stations = await Station.aggregate(pipeline);
-      const totalResult = await Station.aggregate([geoNear, { $count: 'total' }]);
-      total = totalResult[0]?.total || 0;
-    } else {
-      const state = typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OH';
-      const filter = { 'address.state': state, ...(includeIncomplete ? {} : COMPLETE_ADDRESS_FILTER) };
-      total = await Station.countDocuments(filter);
-
-      const pipeline = [{ $match: filter }];
-
-      if (fuel) {
-        pipeline.push({
-          $addFields: {
-            __fuelSort: { $ifNull: [`$prices.${fuel}`, Number.MAX_SAFE_INTEGER] },
-          },
-        });
-        pipeline.push({ $sort: { __fuelSort: 1, name: 1 } });
-      } else {
-        pipeline.push({ $sort: { name: 1 } });
-      }
-
-      pipeline.push({ $skip: skip });
-      pipeline.push({ $limit: limit });
-      pipeline.push({ $project: projection });
-
-      stations = await Station.aggregate(pipeline);
-    }
-
-    const topIds = stations.map((station) => station._id);
-    if (topIds.length > 0) {
-      Station.updateMany({ _id: { $in: topIds } }, { $inc: { searchAppearances: 1 } }).exec();
-    }
-
-    const payload = {
-      stations: stations.map(mapStationPayload),
-      total,
-      page,
-      limit,
-      pages: Math.ceil(total / limit) || 1,
-      queryMode,
-    };
-    await setCachedStations(cacheParams, payload);
+    res.setHeader('x-station-cache', cacheStatus);
+    res.setHeader('x-station-query-mode', queryMode);
     return res.json(payload);
   } catch (err) {
     return next(err);
@@ -330,91 +328,91 @@ router.get('/clusters', async (req, res, next) => {
       lng: null,
       radiusKm: null,
     };
-    const cached = await getCachedStations(cacheParams);
-    if (cached) return res.json(cached);
+    const { data: payload, cacheStatus } = await getOrSetCachedStations(cacheParams, async () => {
+      const fuelPath = fuel ? `$prices.${fuel}` : '$prices.regular';
+      const matchStage = {
+        coordinates: {
+          $geoWithin: {
+            $box: [
+              [bbox.west, bbox.south],
+              [bbox.east, bbox.north],
+            ],
+          },
+        },
+      };
 
-    const fuelPath = fuel ? `$prices.${fuel}` : '$prices.regular';
-    const matchStage = {
-      coordinates: {
-        $geoWithin: {
-          $box: [
-            [bbox.west, bbox.south],
-            [bbox.east, bbox.north],
-          ],
+      const aggregate = await Station.aggregate([
+        { $match: matchStage },
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            brand: 1,
+            status: 1,
+            lat: { $arrayElemAt: ['$coordinates.coordinates', 1] },
+            lng: { $arrayElemAt: ['$coordinates.coordinates', 0] },
+            fuelPrice: fuelPath,
+          },
         },
-      },
-    };
-
-    const aggregate = await Station.aggregate([
-      { $match: matchStage },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          brand: 1,
-          status: 1,
-          lat: { $arrayElemAt: ['$coordinates.coordinates', 1] },
-          lng: { $arrayElemAt: ['$coordinates.coordinates', 0] },
-          fuelPrice: fuelPath,
+        {
+          $addFields: {
+            latBucket: { $floor: { $divide: ['$lat', stepDegrees] } },
+            lngBucket: { $floor: { $divide: ['$lng', stepDegrees] } },
+          },
         },
-      },
-      {
-        $addFields: {
-          latBucket: { $floor: { $divide: ['$lat', stepDegrees] } },
-          lngBucket: { $floor: { $divide: ['$lng', stepDegrees] } },
-        },
-      },
-      {
-        $group: {
-          _id: { latBucket: '$latBucket', lngBucket: '$lngBucket' },
-          count: { $sum: 1 },
-          minPrice: { $min: '$fuelPrice' },
-          lat: { $avg: '$lat' },
-          lng: { $avg: '$lng' },
-          sampleStation: {
-            $first: {
-              _id: '$_id',
-              name: '$name',
-              brand: '$brand',
-              status: '$status',
+        {
+          $group: {
+            _id: { latBucket: '$latBucket', lngBucket: '$lngBucket' },
+            count: { $sum: 1 },
+            minPrice: { $min: '$fuelPrice' },
+            lat: { $avg: '$lat' },
+            lng: { $avg: '$lng' },
+            sampleStation: {
+              $first: {
+                _id: '$_id',
+                name: '$name',
+                brand: '$brand',
+                status: '$status',
+              },
             },
           },
         },
-      },
-      { $sort: { count: -1 } },
-      {
-        $facet: {
-          clusters: [{ $limit: limit }],
-          meta: [{ $count: 'totalClusters' }],
-          totals: [{ $group: { _id: null, totalStations: { $sum: '$count' } } }],
+        { $sort: { count: -1 } },
+        {
+          $facet: {
+            clusters: [{ $limit: limit }],
+            meta: [{ $count: 'totalClusters' }],
+            totals: [{ $group: { _id: null, totalStations: { $sum: '$count' } } }],
+          },
         },
-      },
-    ]);
+      ]);
 
-    const facet = aggregate[0] || { clusters: [], meta: [], totals: [] };
-    const totalClusters = facet.meta[0]?.totalClusters || 0;
-    const totalStations = facet.totals[0]?.totalStations || 0;
-    const clusters = (facet.clusters || []).map((cluster) => ({
-      clusterId: `${cluster._id.latBucket}:${cluster._id.lngBucket}`,
-      center: { lat: cluster.lat, lng: cluster.lng },
-      count: cluster.count,
-      minPrice: Number.isFinite(cluster.minPrice) ? Number(Number(cluster.minPrice).toFixed(3)) : null,
-      sampleStation: cluster.sampleStation,
-    }));
+      const facet = aggregate[0] || { clusters: [], meta: [], totals: [] };
+      const totalClusters = facet.meta[0]?.totalClusters || 0;
+      const totalStations = facet.totals[0]?.totalStations || 0;
+      const clusters = (facet.clusters || []).map((cluster) => ({
+        clusterId: `${cluster._id.latBucket}:${cluster._id.lngBucket}`,
+        center: { lat: cluster.lat, lng: cluster.lng },
+        count: cluster.count,
+        minPrice: Number.isFinite(cluster.minPrice) ? Number(Number(cluster.minPrice).toFixed(3)) : null,
+        sampleStation: cluster.sampleStation,
+      }));
 
-    const payload = {
-      queryMode: 'bbox_cluster',
-      bbox,
-      zoom,
-      stepDegrees,
-      fuel,
-      limit,
-      totalClusters,
-      totalStations,
-      truncated: clusters.length < totalClusters,
-      clusters,
-    };
-    await setCachedStations(cacheParams, payload);
+      return {
+        queryMode: 'bbox_cluster',
+        bbox,
+        zoom,
+        stepDegrees,
+        fuel,
+        limit,
+        totalClusters,
+        totalStations,
+        truncated: clusters.length < totalClusters,
+        clusters,
+      };
+    });
+
+    res.setHeader('x-station-cache', cacheStatus);
     return res.json(payload);
   } catch (err) {
     return next(err);

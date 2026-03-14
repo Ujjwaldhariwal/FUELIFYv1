@@ -3,6 +3,7 @@ const CACHE_PREFIX = 'fuelify:stations:';
 const CACHE_VERSION = 'v1';
 
 const memoryCache = new Map();
+const inFlightResolutions = new Map();
 let activeProvider = 'memory';
 let redisClient = null;
 let invalidationMode = 'direct';
@@ -66,6 +67,31 @@ const deleteMemoryByPrefix = (prefix) => {
   }
 };
 
+const getCachedByKey = async (key) => {
+  if (activeProvider === 'redis' && redisClient) {
+    const raw = await redisClient.get(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      await redisClient.del(key);
+      return null;
+    }
+  }
+  return getMemory(key);
+};
+
+const setCachedByKey = async (key, data, ttlMs = DEFAULT_TTL_MS) => {
+  const normalizedTtlMs = toPositiveInt(ttlMs, DEFAULT_TTL_MS);
+
+  if (activeProvider === 'redis' && redisClient) {
+    const ttlSeconds = Math.ceil(normalizedTtlMs / 1000);
+    await redisClient.setEx(key, ttlSeconds, JSON.stringify(data));
+    return;
+  }
+  setMemory(key, data, normalizedTtlMs);
+};
+
 const initializeStationCache = async () => {
   invalidationMode = (process.env.STATION_CACHE_INVALIDATION_MODE || 'direct').toLowerCase();
   const mode = (process.env.STATION_CACHE_MODE || 'memory').toLowerCase();
@@ -111,36 +137,54 @@ const closeStationCache = async () => {
   }
   redisClient = null;
   activeProvider = 'memory';
+  inFlightResolutions.clear();
 };
 
 const getCachedStations = async (params) => {
   const key = buildKey(params);
-
-  if (activeProvider === 'redis' && redisClient) {
-    const raw = await redisClient.get(key);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch (err) {
-      await redisClient.del(key);
-      return null;
-    }
-  }
-
-  return getMemory(key);
+  return getCachedByKey(key);
 };
 
 const setCachedStations = async (params, data, ttlMs = DEFAULT_TTL_MS) => {
   const key = buildKey(params);
-  const normalizedTtlMs = toPositiveInt(ttlMs, DEFAULT_TTL_MS);
+  await setCachedByKey(key, data, ttlMs);
+};
 
-  if (activeProvider === 'redis' && redisClient) {
-    const ttlSeconds = Math.ceil(normalizedTtlMs / 1000);
-    await redisClient.setEx(key, ttlSeconds, JSON.stringify(data));
-    return;
+const getOrSetCachedStations = async (params, resolver, ttlMs = DEFAULT_TTL_MS) => {
+  const key = buildKey(params);
+  const cached = await getCachedByKey(key);
+  if (cached) {
+    return {
+      data: cached,
+      cacheStatus: 'hit',
+    };
   }
 
-  setMemory(key, data, normalizedTtlMs);
+  const existingPromise = inFlightResolutions.get(key);
+  if (existingPromise) {
+    const deduped = await existingPromise;
+    return {
+      data: deduped,
+      cacheStatus: 'deduped',
+    };
+  }
+
+  const resolvePromise = (async () => {
+    try {
+      const computed = await resolver();
+      await setCachedByKey(key, computed, ttlMs);
+      return computed;
+    } finally {
+      inFlightResolutions.delete(key);
+    }
+  })();
+
+  inFlightResolutions.set(key, resolvePromise);
+  const computed = await resolvePromise;
+  return {
+    data: computed,
+    cacheStatus: 'miss',
+  };
 };
 
 const invalidateStationCache = async () => {
@@ -159,6 +203,7 @@ const invalidateStationCache = async () => {
   }
 
   deleteMemoryByPrefix(`${CACHE_PREFIX}${CACHE_VERSION}:`);
+  inFlightResolutions.clear();
 };
 
 const scheduleStationCacheInvalidation = async (payload = {}) => {
@@ -175,6 +220,7 @@ const scheduleStationCacheInvalidation = async (payload = {}) => {
 };
 
 const getStationCacheProvider = () => activeProvider;
+const getStationCacheInFlightCount = () => inFlightResolutions.size;
 
 module.exports = {
   initializeStationCache,
@@ -182,6 +228,8 @@ module.exports = {
   getStationCacheProvider,
   getCachedStations,
   setCachedStations,
+  getOrSetCachedStations,
   invalidateStationCache,
   scheduleStationCacheInvalidation,
+  getStationCacheInFlightCount,
 };

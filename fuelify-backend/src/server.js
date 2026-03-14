@@ -45,6 +45,32 @@ const createApp = () => {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(requestContext);
+  app.use((req, res, next) => {
+    const startNs = process.hrtime.bigint();
+    const originalEnd = res.end;
+
+    res.end = function patchedEnd(...args) {
+      const durationMs = Number(process.hrtime.bigint() - startNs) / 1e6;
+      res.locals.responseTimeMs = durationMs;
+      if (!res.headersSent && !res.getHeader('x-response-time-ms')) {
+        res.setHeader('x-response-time-ms', durationMs.toFixed(1));
+      }
+      return originalEnd.apply(this, args);
+    };
+
+    res.on('finish', () => {
+      if (!req.originalUrl.startsWith('/api') && req.originalUrl !== '/health') return;
+      const durationMs = res.locals.responseTimeMs || 0;
+      const stationCache = res.getHeader('x-station-cache');
+      const priceCache = res.getHeader('x-price-cache');
+      const cacheLabel = stationCache || priceCache ? ` cache=${stationCache || priceCache}` : '';
+      console.log(
+        `[RequestTiming] req=${req.requestId} ${req.method} ${req.originalUrl} status=${res.statusCode} time=${durationMs.toFixed(1)}ms${cacheLabel}`
+      );
+    });
+
+    return next();
+  });
 
   // Rate limiting
   app.use('/api', apiLimiter);

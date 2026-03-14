@@ -1,5 +1,22 @@
 # Fuelify Backend API Contract Changelog
 
+## 2026-03-14 - Core journey performance and observability hardening
+
+### Added
+- Response headers for lightweight diagnostics:
+  - `x-response-time-ms` on API and health responses.
+  - `x-station-cache` on cached station endpoints (`miss|hit|deduped`).
+  - `x-station-query-mode` on `GET /api/stations` (`near|bbox|state`).
+  - `x-price-cache` on `GET /api/prices/:stationId/latest` (`miss|hit|deduped`).
+
+### Updated
+- Station cache now includes in-flight dedupe for concurrent cache misses to reduce stampedes.
+- Latest price reads (`GET /api/prices/:stationId/latest`) now include short-lived in-memory caching + in-flight dedupe.
+- Rate-limit responses now return consistent payload fields:
+  - `code: "RATE_LIMITED"`
+  - `requestId`
+- Request timing logs now include `requestId`, route, status, duration, and cache status when present.
+
 
 ## 2026-03-07 - Sprint 1 backend hardening
 

@@ -10,6 +10,9 @@ const router = express.Router();
 const FUEL_TYPES = ['petrol', 'diesel', 'premium', 'cng', 'ev'];
 const STALE_HOURS = 6;
 const MAX_CONFIRM_COUNT = 50;
+const LATEST_PRICE_TTL_MS = 30 * 1000;
+const latestPricesCache = new Map();
+const latestPricesInFlight = new Map();
 
 const isPriceStale = (reportedAt, now = Date.now()) => {
   if (!reportedAt) return true;
@@ -29,6 +32,28 @@ const buildEmptyPriceMap = () => ({
   cng: null,
   ev: null,
 });
+
+const getCachedLatestPrices = (stationId) => {
+  const entry = latestPricesCache.get(stationId);
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    latestPricesCache.delete(stationId);
+    return null;
+  }
+  return entry.payload;
+};
+
+const setCachedLatestPrices = (stationId, payload) => {
+  latestPricesCache.set(stationId, {
+    payload,
+    expiresAt: Date.now() + LATEST_PRICE_TTL_MS,
+  });
+};
+
+const invalidateLatestPriceCache = (stationId) => {
+  latestPricesCache.delete(stationId);
+  latestPricesInFlight.delete(stationId);
+};
 
 const applyConfirmation = (report, fingerprint) => {
   if (!report || !fingerprint) return { changed: false, confirmCount: report?.confirmCount || 0 };
@@ -78,6 +103,7 @@ router.post('/', priceLimiter, async (req, res, next) => {
       price: Number(parsedPrice.toFixed(3)),
       reportedBy: req.ip || null,
     });
+    invalidateLatestPriceCache(stationId.toString());
 
     return res.status(201).json({
       reportId: report._id.toString(),
@@ -117,6 +143,7 @@ router.post('/:reportId/confirm', confirmLimiter, async (req, res, next) => {
     if (confirmation.changed) {
       await report.save();
     }
+    invalidateLatestPriceCache(report.stationId.toString());
     return res.status(200).json({ confirmCount: confirmation.confirmCount });
   } catch (err) {
     return next(err);
@@ -131,28 +158,60 @@ router.get('/:stationId/latest', async (req, res, next) => {
       return res.status(400).json({ code: 'INVALID_STATION_ID', error: 'Invalid stationId' });
     }
 
-    const station = await Station.findById(stationId).select('_id').lean();
-    if (!station) {
+    const cached = getCachedLatestPrices(stationId);
+    if (cached) {
+      res.setHeader('x-price-cache', 'hit');
+      return res.status(200).json(cached);
+    }
+
+    const existingPromise = latestPricesInFlight.get(stationId);
+    if (existingPromise) {
+      const payload = await existingPromise;
+      if (!payload) {
+        return res.status(404).json({ code: 'STATION_NOT_FOUND', error: 'Station not found' });
+      }
+      res.setHeader('x-price-cache', 'deduped');
+      return res.status(200).json(payload);
+    }
+
+    const loadPromise = (async () => {
+      const stationExists = await Station.exists({ _id: stationId });
+      if (!stationExists) return null;
+
+      const stationObjectId = new mongoose.Types.ObjectId(stationId);
+      const latestByFuel = await PriceReport.aggregate([
+        { $match: { stationId: stationObjectId } },
+        { $sort: { fuelType: 1, reportedAt: -1 } },
+        { $group: { _id: '$fuelType', report: { $first: '$$ROOT' } } },
+      ]);
+
+      const prices = buildEmptyPriceMap();
+      for (const entry of latestByFuel) {
+        if (!isValidFuelType(entry._id) || !entry.report) continue;
+        prices[entry._id] = mapLatestPrice(entry.report);
+      }
+
+      const payload = {
+        stationId: stationId.toString(),
+        prices,
+      };
+      setCachedLatestPrices(stationId, payload);
+      return payload;
+    })();
+
+    latestPricesInFlight.set(stationId, loadPromise);
+
+    const payload = await loadPromise;
+    latestPricesInFlight.delete(stationId);
+
+    if (!payload) {
       return res.status(404).json({ code: 'STATION_NOT_FOUND', error: 'Station not found' });
     }
 
-    const latestByFuel = await PriceReport.aggregate([
-      { $match: { stationId: new mongoose.Types.ObjectId(stationId) } },
-      { $sort: { fuelType: 1, reportedAt: -1 } },
-      { $group: { _id: '$fuelType', report: { $first: '$$ROOT' } } },
-    ]);
-
-    const prices = buildEmptyPriceMap();
-    for (const entry of latestByFuel) {
-      if (!isValidFuelType(entry._id) || !entry.report) continue;
-      prices[entry._id] = mapLatestPrice(entry.report);
-    }
-
-    return res.status(200).json({
-      stationId: stationId.toString(),
-      prices,
-    });
+    res.setHeader('x-price-cache', 'miss');
+    return res.status(200).json(payload);
   } catch (err) {
+    latestPricesInFlight.delete(req.params.stationId);
     return next(err);
   }
 });
